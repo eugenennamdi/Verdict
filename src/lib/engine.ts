@@ -1,4 +1,6 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import { computeOverallScore } from '@/lib/audit/score';
+import { safeNativeFetch, UnsafeUrlError } from '@/lib/security/url';
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || ''
@@ -152,7 +154,7 @@ const USER_AGENTS = [
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
 ];
 
-async function fetchContext(url: string, fallback_text?: string): Promise<string> {
+export async function fetchContext(url: string, fallback_text?: string): Promise<string> {
   if (fallback_text && fallback_text.trim().length > 10) {
     return fallback_text;
   }
@@ -205,7 +207,7 @@ async function fetchContext(url: string, fallback_text?: string): Promise<string
   if (!markdownContext || markdownContext.length < 50) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const nativeRes = await fetch(url, {
+        const nativeRes = await safeNativeFetch(url, {
           headers: {
             'User-Agent': USER_AGENTS[attempt % USER_AGENTS.length],
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
@@ -226,6 +228,10 @@ async function fetchContext(url: string, fallback_text?: string): Promise<string
           await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
         }
       } catch (e) {
+        if (e instanceof UnsafeUrlError) {
+          console.warn("Native fetch blocked unsafe URL:", e.message);
+          break;
+        }
         console.warn(`Native fetch fallback failed on attempt ${attempt + 1}:`, e);
       }
     }
@@ -239,10 +245,7 @@ async function fetchContext(url: string, fallback_text?: string): Promise<string
   return markdownContext;
 }
 
-export async function extractContext(url: string, fallback_text?: string) {
-  const markdownContext = await fetchContext(url, fallback_text);
-
-  // 2. Extract with Gemini
+export async function identifyFromMarkdown(markdownContext: string) {
   const prompt = `
 You are a ruthless, cynical startup auditor.
 Based on the following markdown scraped from a landing page, your first task is to determine if this is a valid SaaS, B2B, or B2C startup/company. 
@@ -273,6 +276,11 @@ ${markdownContext}
   }
 
   return extractedData;
+}
+
+export async function extractContext(url: string, fallback_text?: string) {
+  const markdownContext = await fetchContext(url, fallback_text);
+  return identifyFromMarkdown(markdownContext);
 }
 
 export async function generateAudit(url: string, extractedContext: Record<string, unknown>) {
@@ -328,24 +336,7 @@ Target Audience: ${target_audience}
     throw new Error("The AI failed to generate a valid audit for this website. Please try again.");
   }
 
-  // Calculate overall score from AI's generated pillar scores
-  const positioning = auditData.pillars.positioning.score || 0;
-  const messaging = auditData.pillars.messaging.score || 0;
-  const website = auditData.pillars.website_ux.score || 0;
-  const conversion = auditData.pillars.conversion.score || 0;
-  const trust = auditData.pillars.trust.score || 0;
-  const competition = auditData.pillars.competition.score || 0;
-  const growth = auditData.pillars.growth_foundation.score || 0;
-
-  const overallScore = Math.round(
-    (positioning * 0.20) + 
-    (messaging * 0.15) + 
-    (website * 0.15) + 
-    (conversion * 0.15) + 
-    (trust * 0.10) + 
-    (competition * 0.10) + 
-    (growth * 0.15)
-  );
+  const overallScore = computeOverallScore(auditData.pillars || {});
 
   return {
     ...auditData,
@@ -353,9 +344,7 @@ Target Audience: ${target_audience}
   };
 }
 
-export async function performFullAudit(url: string, fallback_text?: string) {
-  const markdownContext = await fetchContext(url, fallback_text);
-
+export async function gradeFromMarkdown(url: string, markdownContext: string) {
   const prompt = `
 # ROLE & PERSONA
 You are an elite Silicon Valley Growth Consultant, a seasoned YC Partner, and a ruthless, cynical, yet completely fair Judge. Your purpose is to provide a highly accurate diagnostic assessment of a startup based on web-scraped data.
@@ -400,26 +389,15 @@ ${markdownContext}
     throw new Error(extractedData.invalid_reason || 'This URL is not a valid startup or company website.');
   }
 
-  const positioning = extractedData.pillars?.positioning?.score || 0;
-  const messaging = extractedData.pillars?.messaging?.score || 0;
-  const website = extractedData.pillars?.website_ux?.score || 0;
-  const conversion = extractedData.pillars?.conversion?.score || 0;
-  const trust = extractedData.pillars?.trust?.score || 0;
-  const competition = extractedData.pillars?.competition?.score || 0;
-  const growth = extractedData.pillars?.growth_foundation?.score || 0;
-
-  const overallScore = Math.round(
-    (positioning * 0.20) + 
-    (messaging * 0.15) + 
-    (website * 0.15) + 
-    (conversion * 0.15) + 
-    (trust * 0.10) + 
-    (competition * 0.10) + 
-    (growth * 0.15)
-  );
+  const overallScore = computeOverallScore(extractedData.pillars || {});
 
   return {
     ...extractedData,
     overallScore
   };
+}
+
+export async function performFullAudit(url: string, fallback_text?: string) {
+  const markdownContext = await fetchContext(url, fallback_text);
+  return gradeFromMarkdown(url, markdownContext);
 }
