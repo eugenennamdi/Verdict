@@ -1,27 +1,26 @@
 import { createTracer, type ActivityEvent, type EventEmitter } from "@/lib/audit/events";
+import { acquireEvidencePage } from "@/lib/audit/acquire";
+import {
+  resolveAuditBudget,
+  summarizeEvidencePage,
+  type AuditBudget,
+  type EvidencePageSummary,
+} from "@/lib/audit/evidence";
 import { persistReport } from "@/lib/audit/persist";
 import {
-  fetchContext,
   gradeFromMarkdown,
   identifyFromMarkdown,
+  ScrapingError,
 } from "@/lib/engine";
 import { assertSafeAuditUrl } from "@/lib/security/url";
 
-export type AuditBudget = {
-  maxAdditionalPages: number;
-};
+export type { AuditBudget } from "@/lib/audit/evidence";
 
 export type VerdictIdentity = {
   company_name: string;
   inferred_description: string;
   target_audience: string;
   primary_cta: string;
-};
-
-export type HomepageEvidence = {
-  url: string;
-  category: "homepage";
-  chars: number;
 };
 
 export type RunVerdictAuditInput = {
@@ -38,7 +37,7 @@ export type RunVerdictAuditResult = {
   overallScore: number;
   identity: VerdictIdentity;
   trace: ActivityEvent[];
-  evidence: HomepageEvidence[];
+  evidence: EvidencePageSummary[];
 };
 
 export async function runVerdictAudit(
@@ -46,16 +45,30 @@ export async function runVerdictAudit(
 ): Promise<RunVerdictAuditResult> {
   const tracer = createTracer(input.onEvent);
   const persist = input.persist !== false;
-  void input.budget;
+  const budget = resolveAuditBudget(input.budget);
 
   try {
     const parsed = await assertSafeAuditUrl(input.url);
     tracer.emit("audit.started", undefined, { url: parsed.href });
 
-    const markdown = await fetchContext(parsed.href, input.fallbackText);
-    tracer.emit("site.homepage_acquired", undefined, {
+    const homepage = await acquireEvidencePage({
       url: parsed.href,
-      chars: markdown.length,
+      role: "homepage",
+      category: "identity",
+      fallbackText: input.fallbackText,
+      budget,
+    });
+    if (homepage.status !== "acquired") {
+      throw new ScrapingError(
+        homepage.error ||
+          "This website took too long to load or is actively blocking our scraper. Please provide the raw website text manually."
+      );
+    }
+
+    const markdown = homepage.markdown;
+    tracer.emit("site.homepage_acquired", undefined, {
+      url: homepage.url,
+      chars: homepage.chars,
     });
 
     const extracted = await identifyFromMarkdown(markdown);
@@ -94,13 +107,7 @@ export async function runVerdictAudit(
       overallScore,
       identity,
       trace: tracer.events,
-      evidence: [
-        {
-          url: parsed.href,
-          category: "homepage",
-          chars: markdown.length,
-        },
-      ],
+      evidence: [summarizeEvidencePage(homepage)],
     };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

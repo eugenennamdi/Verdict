@@ -154,17 +154,68 @@ const USER_AGENTS = [
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
 ];
 
-export async function fetchContext(url: string, fallback_text?: string): Promise<string> {
+export type ContextAcquisitionMethod =
+  | "provided"
+  | "firecrawl"
+  | "jina"
+  | "native";
+
+export type ContextAcquisitionResult = {
+  markdown: string;
+  method: ContextAcquisitionMethod;
+};
+
+export type FetchContextOptions = {
+  maxChars?: number;
+  timeoutMs?: number;
+};
+
+function boundedPositiveInteger(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  return Math.max(1, Math.floor(value));
+}
+
+function stageTimeout(deadline: number | undefined, ceilingMs: number): number {
+  if (deadline === undefined) return ceilingMs;
+  return Math.max(1, Math.min(ceilingMs, deadline - Date.now()));
+}
+
+function hasTimeRemaining(deadline: number | undefined): boolean {
+  return deadline === undefined || Date.now() < deadline;
+}
+
+async function boundedBackoff(ms: number, deadline: number | undefined) {
+  const waitMs = stageTimeout(deadline, ms);
+  await new Promise((resolve) => setTimeout(resolve, waitMs));
+}
+
+export async function fetchContextDetailed(
+  url: string,
+  fallback_text?: string,
+  options: FetchContextOptions = {}
+): Promise<ContextAcquisitionResult> {
+  const maxChars = boundedPositiveInteger(options.maxChars);
+  const timeoutMs = boundedPositiveInteger(options.timeoutMs);
+  const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs;
+  const finish = (
+    markdown: string,
+    method: ContextAcquisitionMethod
+  ): ContextAcquisitionResult => ({
+    markdown: maxChars === undefined ? markdown : markdown.slice(0, maxChars),
+    method,
+  });
+
   if (fallback_text && fallback_text.trim().length > 10) {
-    return fallback_text;
+    return finish(fallback_text, "provided");
   }
 
   let markdownContext = '';
 
   // 1. Scrape with Firecrawl
   const firecrawlKey = process.env.FIRECRAWL_API_KEY;
-  if (firecrawlKey) {
+  if (firecrawlKey && hasTimeRemaining(deadline)) {
     try {
+      const timeout = stageTimeout(deadline, 25000);
       const firecrawlRes = await fetch('https://api.firecrawl.dev/v1/scrape', {
         method: 'POST',
         headers: {
@@ -174,14 +225,17 @@ export async function fetchContext(url: string, fallback_text?: string): Promise
         body: JSON.stringify({ 
           url, 
           formats: ['markdown'],
-          timeout: 25000 // Increased timeout for heavy JS/Cloudflare sites
+          timeout // Increased timeout for heavy JS/Cloudflare sites
         }),
-        signal: AbortSignal.timeout(25000)
+        signal: AbortSignal.timeout(timeout)
       });
 
       if (firecrawlRes.ok) {
         const scrapedData = await firecrawlRes.json();
         markdownContext = scrapedData.data?.markdown || '';
+        if (markdownContext.length >= 50) {
+          return finish(markdownContext, "firecrawl");
+        }
       }
     } catch (e) {
       console.warn("Firecrawl scraping failed or timed out:", e);
@@ -189,14 +243,17 @@ export async function fetchContext(url: string, fallback_text?: string): Promise
   }
 
   // 2. Fallback to Jina AI if Firecrawl fails or gets blocked
-  if (!markdownContext || markdownContext.length < 50) {
+  if ((!markdownContext || markdownContext.length < 50) && hasTimeRemaining(deadline)) {
     try {
       const jinaRes = await fetch(`https://r.jina.ai/${url}`, {
         headers: { 'Accept': 'text/plain' },
-        signal: AbortSignal.timeout(15000)
+        signal: AbortSignal.timeout(stageTimeout(deadline, 15000))
       });
       if (jinaRes.ok) {
         markdownContext = await jinaRes.text();
+        if (markdownContext.length >= 50) {
+          return finish(markdownContext, "jina");
+        }
       }
     } catch (e) {
       console.warn("Jina AI fallback failed or timed out:", e);
@@ -206,13 +263,14 @@ export async function fetchContext(url: string, fallback_text?: string): Promise
   // 3. Last Resort Fallback to Native Fetch with Retry and UA Rotation
   if (!markdownContext || markdownContext.length < 50) {
     for (let attempt = 0; attempt < 3; attempt++) {
+      if (!hasTimeRemaining(deadline)) break;
       try {
         const nativeRes = await safeNativeFetch(url, {
           headers: {
             'User-Agent': USER_AGENTS[attempt % USER_AGENTS.length],
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
           },
-          signal: AbortSignal.timeout(10000)
+          signal: AbortSignal.timeout(stageTimeout(deadline, 10000))
         });
         
         if (nativeRes.ok) {
@@ -222,10 +280,12 @@ export async function fetchContext(url: string, fallback_text?: string): Promise
                                 .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
                                 .replace(/<[^>]+>/g, ' ')
                                 .replace(/\s+/g, ' ').trim();
-          if (markdownContext.length > 50) break;
+          if (markdownContext.length > 50) {
+            return finish(markdownContext, "native");
+          }
         } else if (nativeRes.status === 403 || nativeRes.status === 429 || nativeRes.status === 401 || nativeRes.status === 503) {
           // Add brief backoff if blocked
-          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+          await boundedBackoff(2000 * (attempt + 1), deadline);
         }
       } catch (e) {
         if (e instanceof UnsafeUrlError) {
@@ -242,7 +302,15 @@ export async function fetchContext(url: string, fallback_text?: string): Promise
     throw new ScrapingError('This website took too long to load or is actively blocking our scraper. Please provide the raw website text manually.');
   }
 
-  return markdownContext;
+  return finish(markdownContext, "native");
+}
+
+export async function fetchContext(
+  url: string,
+  fallback_text?: string
+): Promise<string> {
+  const result = await fetchContextDetailed(url, fallback_text);
+  return result.markdown;
 }
 
 export async function identifyFromMarkdown(markdownContext: string) {

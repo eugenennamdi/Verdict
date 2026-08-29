@@ -1,4 +1,5 @@
 import type { ActivityEvent } from "@/lib/audit/events";
+import type { EvidencePageSummary } from "@/lib/audit/evidence";
 
 export type PillarScore = {
   score?: number;
@@ -15,7 +16,7 @@ export type AuditSummary = {
     target_audience?: string;
     primary_cta?: string;
   };
-  evidence?: { url: string; category?: string; chars?: number }[];
+  evidence?: EvidencePageSummary[];
   company_name?: string;
   score_interpretation?: string;
   the_verdict?: {

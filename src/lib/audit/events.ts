@@ -1,6 +1,11 @@
 export const ACTIVITY_EVENT_TYPES = [
   "audit.started",
   "site.homepage_acquired",
+  "site.pages_discovered",
+  "evidence.selected",
+  "evidence.acquired",
+  "evidence.insufficient",
+  "evidence.sufficient",
   "startup.identified",
   "scoring.started",
   "report.persisted",
@@ -22,6 +27,11 @@ export type EventEmitter = (event: ActivityEvent) => void;
 const DEFAULT_MESSAGES: Record<ActivityEventType, string> = {
   "audit.started": "Investigation started",
   "site.homepage_acquired": "Homepage acquired",
+  "site.pages_discovered": "Candidate pages discovered",
+  "evidence.selected": "Evidence page selected",
+  "evidence.acquired": "Evidence page acquired",
+  "evidence.insufficient": "More evidence needed",
+  "evidence.sufficient": "Evidence coverage sufficient",
   "startup.identified": "Startup identified",
   "scoring.started": "Computing growth readiness",
   "report.persisted": "Report saved",
