@@ -5,7 +5,9 @@ const globalForRedis = global as unknown as { redis: Redis };
 const dummyRedis = {
   get: async () => null,
   set: async () => 'OK',
-  incr: async () => 1
+  incr: async () => 1,
+  ttl: async () => -2,
+  expire: async () => 1,
 } as any;
 
 export const redis =
