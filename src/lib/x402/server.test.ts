@@ -1,8 +1,11 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { JwtOptions } from "@coinbase/cdp-sdk/auth";
+import { HTTPFacilitatorClient } from "@x402/core/server";
 import {
   createVerdictAuditPaymentConfig,
   createVerdictFacilitatorClient,
+  createVerdictX402ResourceServer,
   DEFAULT_VERDICT_AUDIT_PRICE,
   loadVerdictX402Config,
   VERDICT_CDP_FACILITATOR_URL,
@@ -176,76 +179,88 @@ describe("Verdict x402 server configuration", () => {
   });
 
   it("keeps the Sepolia facilitator unauthenticated", async () => {
-    const generateJwt = vi.fn(async () => "must-not-be-called");
+    const createCdpFacilitatorClient = vi.fn(() => {
+      throw new Error("must not be called");
+    });
     const config = loadVerdictX402Config(environment());
     const facilitator = createVerdictFacilitatorClient(config, {
       env: environment(),
-      generateJwt,
+      createCdpFacilitatorClient,
     });
 
     expect(await facilitator.createAuthHeaders("supported")).toEqual({
       headers: {},
     });
-    expect(generateJwt).not.toHaveBeenCalled();
+    expect(createCdpFacilitatorClient).not.toHaveBeenCalled();
   });
 
-  it("generates fresh request-specific CDP auth for supported, verify, and settle", async () => {
-    let tokenSequence = 0;
-    const generateJwt = vi.fn(async (options: JwtOptions) => {
-      tokenSequence += 1;
-      return `${options.requestMethod}:${options.requestPath}:${tokenSequence}`;
-    });
+  it("initializes Base Mainnet with the official CDP facilitator client", async () => {
     const env = productionEnvironment();
+    const config = loadVerdictX402Config(env);
+    const officialClient = new HTTPFacilitatorClient({
+      url: VERDICT_CDP_FACILITATOR_URL,
+    });
+    const getSupported = vi.spyOn(officialClient, "getSupported").mockResolvedValue({
+      kinds: [
+        {
+          x402Version: 2,
+          scheme: "exact",
+          network: VERDICT_X402_NETWORKS.baseMainnet,
+        },
+      ],
+      extensions: [],
+      signers: {},
+    });
+    const createCdpFacilitatorClient = vi.fn(() => officialClient);
     const facilitator = createVerdictFacilitatorClient(
-      loadVerdictX402Config(env),
-      { env, generateJwt }
+      config,
+      { env, createCdpFacilitatorClient }
     );
+    const server = createVerdictX402ResourceServer(config, facilitator);
 
-    const supported = await facilitator.createAuthHeaders("supported");
-    const verify = await facilitator.createAuthHeaders("verify");
-    const settle = await facilitator.createAuthHeaders("settle");
+    await server.initialize();
 
-    expect(supported.headers.Authorization).toContain(
-      "GET:/platform/v2/x402/supported:"
-    );
-    expect(verify.headers.Authorization).toContain(
-      "POST:/platform/v2/x402/verify:"
-    );
-    expect(settle.headers.Authorization).toContain(
-      "POST:/platform/v2/x402/settle:"
-    );
-    expect(generateJwt).toHaveBeenCalledTimes(9);
-    expect(generateJwt).toHaveBeenCalledWith(
-      expect.objectContaining({
-        apiKeyId: "test-key-id",
-        apiKeySecret: "test-key-secret",
-        requestHost: "api.cdp.coinbase.com",
-        expiresIn: 120,
-      })
-    );
+    expect(facilitator).toBe(officialClient);
+    expect(createCdpFacilitatorClient).toHaveBeenCalledOnce();
+    expect(createCdpFacilitatorClient).toHaveBeenCalledWith();
+    expect(getSupported).toHaveBeenCalledOnce();
+    expect(server.getSupportedKind(2, config.network, "exact")).toMatchObject({
+      x402Version: 2,
+      scheme: "exact",
+      network: config.network,
+    });
   });
 
-  it("sanitizes CDP JWT generation failures", async () => {
+  it("sanitizes official CDP facilitator initialization failures", () => {
     const secret = "never-expose-this-cdp-secret";
     const env = productionEnvironment({ CDP_API_KEY_SECRET: secret });
-    const facilitator = createVerdictFacilitatorClient(
-      loadVerdictX402Config(env),
-      {
-        env,
-        generateJwt: async () => {
-          throw new Error(`invalid credential ${secret}`);
-        },
-      }
-    );
-
     let message = "";
     try {
-      await facilitator.createAuthHeaders("supported");
+      createVerdictFacilitatorClient(loadVerdictX402Config(env), {
+        env,
+        createCdpFacilitatorClient: () => {
+          throw new Error(`invalid credential ${secret}`);
+        },
+      });
     } catch (error) {
       message = error instanceof Error ? error.message : String(error);
     }
 
-    expect(message).toBe("Failed to generate CDP facilitator authentication");
+    expect(message).toBe("CDP facilitator could not initialize");
     expect(message).not.toContain(secret);
+  });
+
+  it("contains no custom CDP JWT or auth-header implementation", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/lib/x402/server.ts"),
+      "utf8"
+    );
+
+    expect(source).toContain(
+      'createCdpFacilitatorClient } from "@coinbase/cdp-sdk/x402"'
+    );
+    expect(source).not.toContain("generateJwt");
+    expect(source).not.toContain("createAuthHeaders");
+    expect(source).not.toContain("authorizationHeader");
   });
 });
