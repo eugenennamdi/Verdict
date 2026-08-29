@@ -57,6 +57,7 @@ describe("public audit result", () => {
       },
       trace: [],
       evidenceTrace: {} as RunVerdictAuditResult["evidenceTrace"],
+      auditContext: {} as RunVerdictAuditResult["auditContext"],
     } as RunVerdictAuditResult;
 
     const summary = summarizeVerdictAuditResult(result);
@@ -87,5 +88,6 @@ describe("public audit result", () => {
     ]);
     expect(summary).not.toHaveProperty("trace");
     expect(summary).not.toHaveProperty("evidenceTrace");
+    expect(summary).not.toHaveProperty("auditContext");
   });
 });

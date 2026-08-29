@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase";
+import type { AuditContextPackV1 } from "@/lib/audit/auditContext";
 import type { EvidenceTrace } from "@/lib/audit/evidenceTrace";
 
 export type PersistableAudit = {
@@ -15,8 +17,10 @@ export async function persistReport(input: {
   company_name: string;
   audit: PersistableAudit;
   evidenceTrace?: EvidenceTrace;
+  auditContext?: AuditContextPackV1;
 }): Promise<string> {
-  const row = buildPersistedReportRow(input);
+  const reportId = randomUUID();
+  const row = buildPersistedReportRow({ ...input, reportId });
   const { data, error } = await supabaseAdmin
     .from("reports")
     .insert([row])
@@ -36,8 +40,11 @@ export function buildPersistedReportRow(input: {
   company_name: string;
   audit: PersistableAudit;
   evidenceTrace?: EvidenceTrace;
+  auditContext?: AuditContextPackV1;
+  reportId?: string;
 }) {
   return {
+    ...(input.reportId ? { id: input.reportId } : {}),
     company_name: input.company_name,
     url: input.url,
     fdi_buzzword_density: 0,
@@ -58,5 +65,11 @@ export function buildPersistedReportRow(input: {
     key_risks: input.audit.the_verdict || {},
     growth_plan_30_day: input.audit.pillars || {},
     evidence_trace: input.evidenceTrace ?? null,
+    audit_context: input.auditContext
+      ? {
+          ...input.auditContext,
+          ...(input.reportId ? { reportId: input.reportId } : {}),
+        }
+      : null,
   };
 }

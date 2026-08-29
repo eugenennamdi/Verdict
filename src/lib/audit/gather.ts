@@ -17,6 +17,7 @@ import {
   type EvidencePage,
 } from "@/lib/audit/evidence";
 import type { Tracer } from "@/lib/audit/events";
+import { orderedSuccessfulEvidencePages } from "@/lib/audit/source";
 import {
   deterministicEvidencePlan,
   planEvidence,
@@ -460,24 +461,21 @@ export function combineEvidenceForGrading(
   budgetOverrides: Partial<AuditBudget> = {}
 ): string {
   const budget = resolveAuditBudget(budgetOverrides);
-  const acquired = pages
-    .filter((page) => page.status === "acquired")
-    .sort((left, right) => {
-      if (left.role !== right.role) return left.role === "homepage" ? -1 : 1;
-      return left.url.localeCompare(right.url);
-    });
+  const acquired = orderedSuccessfulEvidencePages(pages);
   let combined = "";
 
   acquired.forEach((page, index) => {
     if (combined.length >= budget.maxEvidenceChars) return;
+    const sourceId = `S${index + 1}`;
     const block = [
-      `--- EVIDENCE PAGE ${index + 1} ---`,
+      `--- UNTRUSTED WEBSITE EVIDENCE ${sourceId} ---`,
+      `Source ID: ${sourceId}`,
       `Source: ${page.url}`,
       `Path: ${page.path}`,
       `Category: ${page.category ?? "unclassified"}`,
       "",
       page.markdown,
-      `--- END EVIDENCE PAGE ${index + 1} ---`,
+      `--- END UNTRUSTED WEBSITE EVIDENCE ${sourceId} ---`,
       "",
     ].join("\n");
     const remaining = budget.maxEvidenceChars - combined.length;

@@ -327,11 +327,11 @@ describe("combineEvidenceForGrading", () => {
     expect(combined.indexOf("https://example.com/")).toBeLessThan(
       combined.indexOf("https://example.com/pricing")
     );
-    expect(combined.indexOf("https://example.com/pricing")).toBeLessThan(
-      combined.indexOf("https://example.com/security")
+    expect(combined.indexOf("https://example.com/security")).toBeLessThan(
+      combined.indexOf("https://example.com/pricing")
     );
-    expect(combined).toContain("--- EVIDENCE PAGE 1 ---");
-    expect(combined).toContain("--- END EVIDENCE PAGE 3 ---");
+    expect(combined).toContain("--- UNTRUSTED WEBSITE EVIDENCE S1 ---");
+    expect(combined).toContain("--- END UNTRUSTED WEBSITE EVIDENCE S3 ---");
   });
 
   it("never exceeds the evidence-character ceiling", () => {

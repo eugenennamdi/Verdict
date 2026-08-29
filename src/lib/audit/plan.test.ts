@@ -211,5 +211,8 @@ describe("planEvidence", () => {
 
     expect(capturedPrompt).not.toContain("FULL_MARKDOWN_SENTINEL");
     expect(capturedPrompt).toContain(`"summary":"${"a".repeat(240)}"`);
+    expect(capturedPrompt).toContain(
+      "untrusted website-derived data"
+    );
   });
 });

@@ -19,7 +19,12 @@ import {
   gatherAuditEvidence,
   type EvidenceGatherStopReason,
 } from "@/lib/audit/gather";
+import {
+  buildAuditContextPack,
+  type AuditContextPackV1,
+} from "@/lib/audit/auditContext";
 import { persistReport } from "@/lib/audit/persist";
+import { assignEvidenceSourceIds } from "@/lib/audit/source";
 import {
   gradeFromMarkdown,
   identifyFromMarkdown,
@@ -57,6 +62,7 @@ export type RunVerdictAuditResult = {
   budgetUsage: EvidenceBudgetUsage;
   stopReason: EvidenceGatherStopReason;
   evidenceTrace: EvidenceTrace;
+  auditContext: AuditContextPackV1;
   investigation: {
     candidatesDiscovered: number;
     planningRounds: number;
@@ -116,10 +122,13 @@ export async function runVerdictAudit(
       startedAt: gatherStartedAt,
       tracer,
     });
+    const sources = assignEvidenceSourceIds(gathered.pages);
     const graderEvidence = combineEvidenceForGrading(gathered.pages, budget);
 
     tracer.emit("scoring.started");
-    const audit = await gradeFromMarkdown(parsed.href, graderEvidence);
+    const audit = await gradeFromMarkdown(parsed.href, graderEvidence, {
+      sources,
+    });
     const overallScore = audit.overallScore;
     const evidenceTrace = serializeEvidenceTrace({
       pages: gathered.pages,
@@ -129,6 +138,19 @@ export async function runVerdictAudit(
       budget,
       stopReason: gathered.stopReason,
     });
+    let auditContext = buildAuditContextPack({
+      url: parsed.href,
+      auditTimestamp: new Date().toISOString(),
+      identity,
+      audit,
+      overallScore,
+      sources,
+      evidenceDigests: audit.evidenceDigests,
+      finalCoverage: gathered.coverage,
+      planningRounds: gathered.planningRounds,
+      stopReason: gathered.stopReason,
+      budgetUsage: evidenceTrace.budget,
+    });
 
     let reportId: string | undefined;
     if (persist) {
@@ -137,7 +159,9 @@ export async function runVerdictAudit(
         company_name: identity.company_name || audit.company_name || "Unknown",
         audit,
         evidenceTrace,
+        auditContext,
       });
+      auditContext = { ...auditContext, reportId };
       tracer.emit("report.persisted", undefined, { report_id: reportId });
     }
 
@@ -159,6 +183,7 @@ export async function runVerdictAudit(
       budgetUsage: evidenceTrace.budget,
       stopReason: gathered.stopReason,
       evidenceTrace,
+      auditContext,
       investigation: {
         candidatesDiscovered: gathered.candidatesDiscovered,
         planningRounds: gathered.planningRounds,
