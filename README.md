@@ -19,6 +19,16 @@ Verdict operates as a dual-sided platform:
 - **For Founders:** Single startup teardowns to harden go-to-market positioning.
 - **For VCs & Accelerators:** Automated, bulk deal-flow screening at scale.
 
+### Current access paths
+
+- **Humans:** A conversational workspace with free, rate-limited audits.
+- **Agents:** `POST /api/v2/audit`, a bounded investigation paid through x402 V2 on Base at `$0.50` USDC per successful fulfillment.
+
+The canonical agent API returns JSON with the score, verdict, seven pillars,
+priorities, evidence coverage, and investigation metadata. Base Sepolia
+settlement has been verified; Base Mainnet is intended for production but has
+not yet been payment-verified.
+
 ---
 
 ## Standout Features & Benefits
@@ -93,8 +103,9 @@ the agent signs the advertised exact-payment requirement and retries with a
 `PAYMENT-SIGNATURE` header. A successful audit includes the standard
 `PAYMENT-RESPONSE` settlement header. Configure the network, facilitator,
 receiving address, and optional price override using the variables documented
-in `.env.example`. Base Sepolia is the development/test configuration; Base
-mainnet payment has not yet been production-verified.
+in `.env.example`. Base Sepolia settlement has been verified in the
+development/test configuration; Base Mainnet payment has not yet been
+production-verified.
 
 ### Persistence, Delivery & Soulbound Attestations
 The final structured audit, complete with priority matrices and pillar scores, is persisted to a **Supabase PostgreSQL** database. 

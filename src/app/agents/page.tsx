@@ -1,331 +1,291 @@
-'use client';
+import type { Metadata } from "next";
+import Link from "next/link";
+import { ArrowDown, ArrowLeft, CheckCircle2, CircleDot } from "lucide-react";
+import { CopyCodeButton } from "@/components/agents/CopyCodeButton";
+import {
+  AGENT_API_STATUS,
+  AGENT_AUDIT_PATH,
+  AGENT_AUDIT_PRICE,
+  AGENT_BUYER_EXAMPLE,
+  AGENT_REQUEST_EXAMPLE,
+  AGENT_RESPONSE_EXAMPLE,
+  AGENT_UNPAID_CURL_EXAMPLE,
+} from "@/lib/agentApi/content";
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Terminal, Copy, Check, ChevronLeft, Shield, Database, Coins } from 'lucide-react';
-import { Footer } from '@/components/footer';
+export const metadata: Metadata = {
+  title: "Agent API | Verdict",
+  description:
+    "Programmatic access to Verdict's bounded growth investigation through x402 V2 on Base.",
+};
 
-const VerdictLogo = ({ className }: { className?: string }) => (
-  <svg 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    xmlns="http://www.w3.org/2000/svg"
-    className={className}
-  >
-    <path 
-      d="M4 5L12 19L20 5" 
-      stroke="currentColor" 
-      strokeWidth="4" 
-      strokeMiterlimit="10"
-      strokeLinecap="butt" 
-      strokeLinejoin="miter" 
-    />
-  </svg>
-);
+const sections = [
+  ["overview", "Overview"],
+  ["protocol", "Protocol flow"],
+  ["contract", "Request & response"],
+  ["typescript", "TypeScript client"],
+  ["http", "Raw HTTP"],
+  ["lifecycle", "Payment lifecycle"],
+  ["investigation", "What you receive"],
+] as const;
+
+const protocolSteps = [
+  ["01", "Agent", "A buyer needs structured growth intelligence."],
+  ["02", "POST", AGENT_AUDIT_PATH],
+  ["03", "HTTP 402", "The server advertises payment requirements."],
+  ["04", AGENT_AUDIT_PRICE, "USDC authorization on Base."],
+  ["05", "Investigate", "Verdict performs bounded multi-page research."],
+  ["06", "JSON", "The agent receives a persisted, structured result."],
+] as const;
+
+const lifecycle = [
+  "Send the audit URL to the canonical endpoint.",
+  "Receive HTTP 402 with x402 V2 payment requirements.",
+  "Select the advertised Base payment option.",
+  "Sign a USDC authorization in the buyer process.",
+  "Retry the request with the payment signature.",
+  "Verdict verifies payment before beginning the audit and settles successful fulfillment.",
+  "Receive the JSON result and payment response metadata.",
+] as const;
+
+const investigation = [
+  "Acquires and preserves the startup homepage as primary evidence.",
+  "Discovers safe, same-site candidate pages without crawling the whole site.",
+  "Assesses evidence gaps and selects useful supporting pages.",
+  "Stops on sufficiency, planner completion, unavailable evidence, or a hard budget.",
+  "Caps pages, evidence characters, planning rounds, and gather time.",
+  "Grades the combined evidence and produces the deterministic seven-pillar score.",
+] as const;
+
+function VerdictMark() {
+  return (
+    <span className="flex size-8 items-center justify-center rounded-lg bg-zinc-950 text-sm font-semibold text-white">
+      V
+    </span>
+  );
+}
+
+function CodeBlock({ children }: { children: string }) {
+  return (
+    <pre className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950 p-5 text-[13px] leading-6 text-zinc-200 shadow-sm">
+      <code>{children}</code>
+    </pre>
+  );
+}
+
+function SectionHeading({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow: string;
+  title: string;
+  description?: string;
+}) {
+  return (
+    <div className="mb-7 max-w-3xl">
+      <p className="mb-2 font-mono text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">
+        {eyebrow}
+      </p>
+      <h2 className="text-2xl font-semibold tracking-tight text-zinc-950 sm:text-3xl">
+        {title}
+      </h2>
+      {description ? (
+        <p className="mt-3 text-base leading-7 text-zinc-600">{description}</p>
+      ) : null}
+    </div>
+  );
+}
 
 export default function AgentsPage() {
-  const [copiedCurl, setCopiedCurl] = useState(false);
-  const [activeTab, setActiveTab] = useState<'single' | 'bulk'>('single');
-
-  const singleCurl = `curl -X POST https://tryverdict.xyz/api/evaluate-mcp \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer <API_KEY>" \\
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/call",
-    "params": {
-      "name": "evaluate_startup",
-      "arguments": {
-        "url": "https://startup.com"
-      }
-    }
-  }'`;
-
-  const singleJson = `{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "content": [
-      {
-        "type": "text",
-        "text": "{\\n  \\"company_name\\": \\"Startup Inc\\",\\n  \\"growth_readiness_score\\": 92,\\n  \\"actionable_feedback\\": [...]\\n}"
-      }
-    ]
-  }
-}`;
-
-  const bulkCurl = `curl -X POST https://tryverdict.xyz/api/bulk-evaluate-mcp \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer <API_KEY>" \\
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/call",
-    "params": {
-      "name": "bulk_evaluate_startups",
-      "arguments": {
-        "urls": [
-          "https://startup1.com",
-          "https://startup2.com"
-        ]
-      }
-    }
-  }'`;
-
-  const bulkJson = `{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "content": [
-      {
-        "type": "text",
-        "text": "[\\n  { \\"url\\": \\"https://startup1.com\\", \\"growth_readiness_score\\": 92 },\\n  { \\"url\\": \\"https://startup2.com\\", \\"growth_readiness_score\\": 45 }\\n]"
-      }
-    ]
-  }
-}`;
-
-  const currentCurl = activeTab === 'single' ? singleCurl : bulkCurl;
-  const currentJson = activeTab === 'single' ? singleJson : bulkJson;
-
-  const copyToClipboard = async () => {
-    await navigator.clipboard.writeText(currentCurl);
-    setCopiedCurl(true);
-    setTimeout(() => setCopiedCurl(false), 2000);
-  };
-
   return (
-    <div className="min-h-[100dvh] flex flex-col relative bg-slate-50 dark:bg-[#090C15] selection:bg-orange-500/30">
-      {/* Subtle Premium Background */}
-      <div className="absolute top-0 left-0 right-0 h-[500px] bg-gradient-to-b from-orange-500/5 via-transparent to-transparent pointer-events-none" />
-      <div className="absolute inset-0 bg-[url('/noise.png')] opacity-[0.03] pointer-events-none mix-blend-overlay" />
-
-      {/* Header */}
-      <header className="sticky top-4 z-50 w-[calc(100%-2rem)] max-w-6xl mx-auto px-6 py-4 flex justify-between items-center bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800/50 rounded-full transition-all duration-300 mb-8 mt-4 shadow-sm">
-        <Link 
-          href="/" 
-          className="flex items-center justify-center w-10 h-10 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm group"
-          aria-label="Back to Homepage"
-        >
-          <ChevronLeft className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:-translate-x-1 transition-transform" />
-        </Link>
+    <div className="min-h-screen bg-white text-zinc-950">
+      <header className="border-b border-zinc-200 bg-white">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8">
+          <Link href="/" className="flex items-center gap-3 font-semibold tracking-tight">
+            <VerdictMark />
+            Verdict
+          </Link>
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-sm font-medium text-zinc-600 transition hover:text-zinc-950"
+          >
+            <ArrowLeft className="size-4" />
+            Workspace
+          </Link>
+        </div>
       </header>
 
-      <main className="flex-1 w-full max-w-6xl mx-auto px-4 pb-20 relative z-10">
-        
-        {/* Bento Grid Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          
-          {/* Left Column: Context & Endpoint */}
-          <div className="lg:col-span-5 flex flex-col gap-6">
-            
-            {/* Overview Card with Tabs */}
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white dark:bg-slate-900/60 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800/80 rounded-3xl p-8 shadow-sm relative overflow-hidden group flex flex-col"
-            >
-              <div className="relative z-10 mb-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <VerdictLogo className="w-5 h-5 text-orange-500" />
-                  <a href="https://www.okx.ai/agents/4686" target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-slate-900 dark:text-white tracking-tight hover:text-orange-500 transition-colors">
-                    Verdict
+      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-12 px-5 py-12 sm:px-8 lg:grid-cols-[190px_minmax(0,1fr)] lg:gap-16 lg:py-16">
+        <aside className="hidden lg:block">
+          <nav className="sticky top-8 border-l border-zinc-200 pl-5" aria-label="Agent API sections">
+            <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              On this page
+            </p>
+            <ul className="space-y-3">
+              {sections.map(([id, label]) => (
+                <li key={id}>
+                  <a className="text-sm text-zinc-600 transition hover:text-zinc-950" href={`#${id}`}>
+                    {label}
                   </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </aside>
+
+        <main className="min-w-0">
+          <section id="overview" className="scroll-mt-8 border-b border-zinc-200 pb-16">
+            <p className="mb-5 font-mono text-xs font-semibold uppercase tracking-[0.2em] text-indigo-600">
+              Verdict Agent API
+            </p>
+            <h1 className="max-w-4xl text-4xl font-semibold tracking-[-0.035em] text-zinc-950 sm:text-6xl sm:leading-[1.06]">
+              Autonomous growth investigation, paid programmatically.
+            </h1>
+            <p className="mt-6 max-w-3xl text-lg leading-8 text-zinc-600">
+              Send a startup URL. Verdict performs a bounded, multi-page evidence investigation,
+              grades the combined evidence, persists the report, and returns structured JSON for
+              your agent to use.
+            </p>
+
+            <dl className="mt-10 grid overflow-hidden rounded-xl border border-zinc-200 sm:grid-cols-2 xl:grid-cols-5">
+              {[
+                ["Endpoint", `POST ${AGENT_AUDIT_PATH}`],
+                ["Price", `${AGENT_AUDIT_PRICE} USDC`],
+                ["Network", AGENT_API_STATUS.productionNetwork],
+                ["Protocol", "x402 V2"],
+                ["Response", "JSON"],
+              ].map(([term, detail]) => (
+                <div key={term} className="border-b border-zinc-200 p-5 last:border-b-0 sm:border-r sm:[&:nth-child(even)]:border-r-0 xl:border-b-0 xl:[&:nth-child(even)]:border-r xl:last:border-r-0">
+                  <dt className="text-xs font-medium uppercase tracking-wider text-zinc-400">{term}</dt>
+                  <dd className="mt-2 break-words font-mono text-sm font-semibold text-zinc-900">{detail}</dd>
                 </div>
-                
-                <p className="text-base text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
-                  Autonomously run single growth audits or bulk screen entire deal-flows via OKX.AI.
-                </p>
-              </div>
+              ))}
+            </dl>
 
-              {/* Tabs */}
-              <div className="relative z-10 flex p-1 bg-slate-100 dark:bg-slate-800/50 rounded-2xl border border-slate-200/50 dark:border-slate-700/50">
-                <button
-                  onClick={() => setActiveTab('single')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all ${activeTab === 'single' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
-                >
-                  Single Audit
-                </button>
-                <button
-                  onClick={() => setActiveTab('bulk')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all ${activeTab === 'bulk' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
-                >
-                  Bulk Screener
-                </button>
-              </div>
-            </motion.div>
+            <div className="mt-7 border-l-2 border-indigo-500 bg-indigo-50 px-5 py-4 text-sm leading-6 text-indigo-950">
+              <strong>{AGENT_API_STATUS.testStatus}</strong>{" "}
+              {AGENT_API_STATUS.productionStatus}
+            </div>
+          </section>
 
-            {/* Endpoint Card */}
-            <motion.div 
-              key={activeTab}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2 }}
-              className="bg-white dark:bg-[#0D1117] border border-slate-200/50 dark:border-slate-800 rounded-3xl p-8 shadow-sm"
-            >
-                <div className="flex items-center gap-3 mb-8">
-                  <div className="px-3 py-1 rounded-md bg-green-100 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 flex items-center justify-center shadow-sm">
-                    <span className="text-green-700 dark:text-green-400 font-black text-xs tracking-wider">POST</span>
-                  </div>
-                  <h2 className="text-lg font-mono font-semibold text-slate-900 dark:text-white">
-                    {activeTab === 'single' ? '/api/evaluate-mcp' : '/api/bulk-evaluate-mcp'}
-                  </h2>
+          <section id="protocol" className="scroll-mt-8 border-b border-zinc-200 py-16">
+            <SectionHeading
+              eyebrow="Protocol"
+              title="One paid request, one investigation"
+              description="The payment challenge is part of normal HTTP request handling. Audit work begins only after authorization succeeds."
+            />
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+              {protocolSteps.map(([number, title, detail], index) => (
+                <div key={number} className="contents">
+                  <article className="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+                    <span className="font-mono text-[11px] font-semibold text-indigo-600">{number}</span>
+                    <h3 className="mt-5 text-sm font-semibold text-zinc-950">{title}</h3>
+                    <p className="mt-2 break-words text-xs leading-5 text-zinc-600">{detail}</p>
+                  </article>
+                  {index < protocolSteps.length - 1 ? (
+                    <ArrowDown className="mx-auto size-4 text-zinc-300 sm:hidden" aria-hidden="true" />
+                  ) : null}
                 </div>
+              ))}
+            </div>
+          </section>
 
-                <div className="space-y-6">
-                  <div className="flex gap-4">
-                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
-                      <Coins className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-1">Pricing</h3>
-                      <p className="text-slate-600 dark:text-slate-400 text-sm font-medium">
-                        {activeTab === 'single' ? '0.5 USDT on X Layer per successful audit.' : '10.0 USDT on X Layer per bulk execution.'}
-                      </p>
-                    </div>
-                  </div>
+          <section id="contract" className="scroll-mt-8 border-b border-zinc-200 py-16">
+            <SectionHeading
+              eyebrow="Contract"
+              title="A deliberately small request surface"
+              description="The request accepts one field: the public startup URL to investigate."
+            />
+            <div className="grid gap-7 xl:grid-cols-2">
+              <div>
+                <h3 className="mb-3 text-sm font-semibold text-zinc-900">Request body</h3>
+                <CodeBlock>{AGENT_REQUEST_EXAMPLE}</CodeBlock>
+              </div>
+              <div>
+                <h3 className="mb-3 text-sm font-semibold text-zinc-900">Response excerpt</h3>
+                <CodeBlock>{AGENT_RESPONSE_EXAMPLE}</CodeBlock>
+              </div>
+            </div>
+            <p className="mt-6 max-w-3xl text-sm leading-6 text-zinc-600">
+              The full public result includes the verdict, seven scoring pillars, priority matrix,
+              evidence coverage, and investigation budget summary. It excludes scraped markdown,
+              prompts, payment signatures, and private model reasoning.
+            </p>
+          </section>
 
-                  <div className="flex gap-4">
-                    <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center shrink-0">
-                      <Shield className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-1">Authentication</h3>
-                      <p className="text-slate-600 dark:text-slate-400 text-sm font-medium">Bearer token required via Header.</p>
-                    </div>
-                  </div>
+          <section id="typescript" className="scroll-mt-8 border-b border-zinc-200 py-16">
+            <SectionHeading
+              eyebrow="Buyer"
+              title="Call Verdict with the official x402 V2 client"
+              description="The wrapper handles the initial 402 challenge, signs the advertised EVM payment, and retries the request."
+            />
+            <CodeBlock>npm install @x402/core@2.24 @x402/evm@2.24 @x402/fetch@2.24 viem</CodeBlock>
+            <div className="mt-4 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
+              <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+                <span className="font-mono text-xs text-zinc-400">audit.ts</span>
+                <CopyCodeButton value={AGENT_BUYER_EXAMPLE} />
+              </div>
+              <pre className="overflow-x-auto p-5 text-[13px] leading-6 text-zinc-200">
+                <code>{AGENT_BUYER_EXAMPLE}</code>
+              </pre>
+            </div>
+            <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+              Keep <code className="font-mono text-xs">EVM_PRIVATE_KEY</code> in a server-side secret
+              manager. Never ship a payer key to browser code, logs, or source control.
+            </div>
+          </section>
 
-                  <div className="flex gap-4">
-                    <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center shrink-0">
-                      <Database className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-1">Rate Limit</h3>
-                      <p className="text-slate-600 dark:text-slate-400 text-sm font-medium">
-                        {activeTab === 'single' ? 'Unlimited requests via x402 & Onchain OS.' : 'No strict limit. Up to 20 URLs per request.'}
-                      </p>
-                    </div>
-                  </div>
+          <section id="http" className="scroll-mt-8 border-b border-zinc-200 py-16">
+            <SectionHeading
+              eyebrow="Raw HTTP"
+              title="Inspect the payment challenge"
+              description="This curl command is intentionally unpaid. It demonstrates the initial request and should return HTTP 402 with payment requirements; it does not complete an audit."
+            />
+            <CodeBlock>{AGENT_UNPAID_CURL_EXAMPLE}</CodeBlock>
+          </section>
+
+          <section id="lifecycle" className="scroll-mt-8 border-b border-zinc-200 py-16">
+            <SectionHeading
+              eyebrow="Lifecycle"
+              title="Payment and fulfillment"
+              description="Verdict uses x402 V2's challenge-and-retry flow while keeping payment verification ahead of costly audit execution."
+            />
+            <ol className="grid gap-3 md:grid-cols-2">
+              {lifecycle.map((item, index) => (
+                <li key={item} className="flex gap-4 rounded-xl border border-zinc-200 p-4">
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-zinc-950 font-mono text-xs text-white">
+                    {index + 1}
+                  </span>
+                  <span className="pt-0.5 text-sm leading-6 text-zinc-700">{item}</span>
+                </li>
+              ))}
+            </ol>
+          </section>
+
+          <section id="investigation" className="scroll-mt-8 pt-16">
+            <SectionHeading
+              eyebrow="Product"
+              title="What the agent buys"
+              description="This is bounded investigation, not an exhaustive crawl. Verdict seeks enough useful evidence to produce a defensible growth-readiness assessment within fixed limits."
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              {investigation.map((item) => (
+                <div key={item} className="flex gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+                  <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-indigo-600" />
+                  <p className="text-sm leading-6 text-zinc-700">{item}</p>
                 </div>
-            </motion.div>
-
-          </div>
-
-          {/* Right Column: Code & JSON */}
-          <div className="lg:col-span-7 flex flex-col gap-6">
-            
-            <motion.div 
-              key={`curl-${activeTab}`}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2 }}
-              className="bg-[#0D1117] border border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative group"
-            >
-              {/* macOS style header */}
-              <div className="flex items-center justify-between px-4 py-3 bg-[#161B22] border-b border-slate-800">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-[#FF5F56] border border-[#E0443E]" />
-                  <div className="w-3 h-3 rounded-full bg-[#FFBD2E] border border-[#DEA123]" />
-                  <div className="w-3 h-3 rounded-full bg-[#27C93F] border border-[#1AAB29]" />
-                  <span className="ml-3 text-slate-400 text-xs font-mono">cURL Request</span>
-                </div>
-                <button 
-                  onClick={copyToClipboard}
-                  className="p-1.5 rounded-md hover:bg-slate-800 text-slate-400 transition-colors"
-                >
-                  {copiedCurl ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                </button>
-              </div>
-              <div className="p-6 overflow-x-auto">
-                <pre className="text-sm font-mono leading-relaxed">
-                  <span className="text-[#FF7B72]">curl</span> <span className="text-[#79C0FF]">-X</span> <span className="text-[#A5D6FF]">POST</span> <span className="text-[#C9D1D9]">https://tryverdict.xyz{activeTab === 'single' ? '/api/evaluate-mcp' : '/api/bulk-evaluate-mcp'} \\</span><br/>
-                  <span className="text-[#79C0FF]">  -H</span> <span className="text-[#A5D6FF]">"Content-Type: application/json"</span> <span className="text-[#C9D1D9]">\\</span><br/>
-                  <span className="text-[#79C0FF]">  -H</span> <span className="text-[#A5D6FF]">"Authorization: Bearer &lt;API_KEY&gt;"</span> <span className="text-[#C9D1D9]">\\</span><br/>
-                  <span className="text-[#79C0FF]">  -d</span> <span className="text-[#A5D6FF]">{activeTab === 'single' ? `'{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/call",
-    "params": {
-      "name": "evaluate_startup",
-      "arguments": {
-        "url": "https://startup.com"
-      }
-    }
-  }'` : `'{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/call",
-    "params": {
-      "name": "bulk_evaluate_startups",
-      "arguments": {
-        "urls": [
-          "https://startup1.com",
-          "https://startup2.com"
-        ]
-      }
-    }
-  }'`}</span>
-                </pre>
-              </div>
-            </motion.div>
-
-            {/* JSON Response Schema */}
-            <motion.div 
-              key={`json-${activeTab}`}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2, delay: 0.1 }}
-              className="bg-[#0D1117] border border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative"
-            >
-              <div className="flex items-center px-4 py-3 bg-[#161B22] border-b border-slate-800">
-                <Terminal className="w-4 h-4 text-slate-400 mr-2" />
-                <span className="text-slate-400 text-xs font-mono">Response Schema (200 OK)</span>
-              </div>
-              <div className="p-6 overflow-x-auto h-[400px] overflow-y-auto custom-scrollbar">
-                <pre className="text-sm font-mono leading-relaxed text-[#C9D1D9]">
-                  {activeTab === 'single' ? (
-                    <>
-                      <span className="text-[#C9D1D9]">{"{"}</span><br/>
-                      <span className="text-[#7EE787]">  "jsonrpc"</span><span className="text-[#C9D1D9]">: </span><span className="text-[#A5D6FF]">"2.0"</span><span className="text-[#C9D1D9]">,</span><br/>
-                      <span className="text-[#7EE787]">  "id"</span><span className="text-[#C9D1D9]">: </span><span className="text-[#79C0FF]">1</span><span className="text-[#C9D1D9]">,</span><br/>
-                      <span className="text-[#7EE787]">  "result"</span><span className="text-[#C9D1D9]">: {"{"}</span><br/>
-                      <span className="text-[#7EE787]">    "content"</span><span className="text-[#C9D1D9]">: [</span><br/>
-                      <span className="text-[#C9D1D9]">      {"{"}</span><br/>
-                      <span className="text-[#7EE787]">        "type"</span><span className="text-[#C9D1D9]">: </span><span className="text-[#A5D6FF]">"text"</span><span className="text-[#C9D1D9]">,</span><br/>
-                      <span className="text-[#7EE787]">        "text"</span><span className="text-[#C9D1D9]">: </span><span className="text-[#A5D6FF]">{"\"{\\n  \\\"company_name\\\": \\\"Startup Inc\\\",\\n  \\\"growth_readiness_score\\\": 92,\\n  \\\"actionable_feedback\\\": [...]\\n}\""}</span><br/>
-                      <span className="text-[#C9D1D9]">      {"}"}</span><br/>
-                      <span className="text-[#C9D1D9]">    ]</span><br/>
-                      <span className="text-[#C9D1D9]">  {"}"}</span><br/>
-                      <span className="text-[#C9D1D9]">{"}"}</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-[#C9D1D9]">{"{"}</span><br/>
-                      <span className="text-[#7EE787]">  "jsonrpc"</span><span className="text-[#C9D1D9]">: </span><span className="text-[#A5D6FF]">"2.0"</span><span className="text-[#C9D1D9]">,</span><br/>
-                      <span className="text-[#7EE787]">  "id"</span><span className="text-[#C9D1D9]">: </span><span className="text-[#79C0FF]">1</span><span className="text-[#C9D1D9]">,</span><br/>
-                      <span className="text-[#7EE787]">  "result"</span><span className="text-[#C9D1D9]">: {"{"}</span><br/>
-                      <span className="text-[#7EE787]">    "content"</span><span className="text-[#C9D1D9]">: [</span><br/>
-                      <span className="text-[#C9D1D9]">      {"{"}</span><br/>
-                      <span className="text-[#7EE787]">        "type"</span><span className="text-[#C9D1D9]">: </span><span className="text-[#A5D6FF]">"text"</span><span className="text-[#C9D1D9]">,</span><br/>
-                      <span className="text-[#7EE787]">        "text"</span><span className="text-[#C9D1D9]">: </span><span className="text-[#A5D6FF]">{"\"[\\n  { \\\"url\\\": \\\"https://startup1.com\\\", \\\"growth_readiness_score\\\": 92 },\\n  { \\\"url\\\": \\\"https://startup2.com\\\", \\\"growth_readiness_score\\\": 45 }\\n]\""}</span><br/>
-                      <span className="text-[#C9D1D9]">      {"}"}</span><br/>
-                      <span className="text-[#C9D1D9]">    ]</span><br/>
-                      <span className="text-[#C9D1D9]">  {"}"}</span><br/>
-                      <span className="text-[#C9D1D9]">{"}"}</span>
-                    </>
-                  )}
-                </pre>
-              </div>
-            </motion.div>
-
-          </div>
-        </div>
-
-      </main>
-
-      <Footer />
+              ))}
+            </div>
+            <div className="mt-8 flex items-start gap-3 rounded-xl border border-zinc-200 p-5">
+              <CircleDot className="mt-0.5 size-5 shrink-0 text-zinc-500" />
+              <p className="text-sm leading-6 text-zinc-600">
+                The public response reports pages inspected, coverage, planning rounds, budget use,
+                and the stop reason so downstream agents can judge the investigation scope.
+              </p>
+            </div>
+          </section>
+        </main>
+      </div>
     </div>
   );
 }

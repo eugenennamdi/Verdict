@@ -8,18 +8,19 @@ import {
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { withX402 } from "@x402/next";
 import type { NextRequest, NextResponse } from "next/server";
+import {
+  DEFAULT_VERDICT_AUDIT_PRICE,
+  VERDICT_AUDIT_DESCRIPTION,
+  VERDICT_X402_NETWORKS,
+  type VerdictX402Network,
+} from "@/lib/x402/constants";
 
-export const VERDICT_X402_NETWORKS = {
-  baseMainnet: "eip155:8453",
-  baseSepolia: "eip155:84532",
-} as const;
-
-export type VerdictX402Network =
-  (typeof VERDICT_X402_NETWORKS)[keyof typeof VERDICT_X402_NETWORKS];
-
-export const DEFAULT_VERDICT_AUDIT_PRICE = "$0.50";
-export const VERDICT_AUDIT_DESCRIPTION =
-  "Autonomous Verdict growth investigation";
+export {
+  DEFAULT_VERDICT_AUDIT_PRICE,
+  VERDICT_AUDIT_DESCRIPTION,
+  VERDICT_X402_NETWORKS,
+} from "@/lib/x402/constants";
+export type { VerdictX402Network } from "@/lib/x402/constants";
 
 const REQUIRED_ENV = [
   "VERDICT_X402_NETWORK",

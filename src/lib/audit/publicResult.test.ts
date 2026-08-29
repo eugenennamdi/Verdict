@@ -59,12 +59,33 @@ describe("public audit result", () => {
       evidenceTrace: {} as RunVerdictAuditResult["evidenceTrace"],
     } as RunVerdictAuditResult;
 
-    expect(summarizeVerdictAuditResult(result)).toMatchObject({
+    const summary = summarizeVerdictAuditResult(result);
+
+    expect(summary).toMatchObject({
       pagesInspected: 1,
       finalCoverage: result.finalCoverage,
       budgetUsage: result.budgetUsage,
       stopReason: "discovery_failed",
       evidence: [],
     });
+    expect(Object.keys(summary)).toEqual([
+      "reportId",
+      "overallScore",
+      "identity",
+      "pagesInspected",
+      "evidence",
+      "evidenceCoverage",
+      "finalCoverage",
+      "budgetUsage",
+      "stopReason",
+      "investigation",
+      "company_name",
+      "score_interpretation",
+      "the_verdict",
+      "priority_matrix",
+      "pillars",
+    ]);
+    expect(summary).not.toHaveProperty("trace");
+    expect(summary).not.toHaveProperty("evidenceTrace");
   });
 });
