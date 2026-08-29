@@ -1,0 +1,37 @@
+import type { ActivityEvent } from "@/lib/audit/events";
+
+export type PillarScore = {
+  score?: number;
+  confidence?: string;
+  reason?: string;
+};
+
+export type AuditSummary = {
+  reportId?: string;
+  overallScore: number;
+  identity: {
+    company_name: string;
+    inferred_description?: string;
+    target_audience?: string;
+    primary_cta?: string;
+  };
+  evidence?: { url: string; category?: string; chars?: number }[];
+  company_name?: string;
+  score_interpretation?: string;
+  the_verdict?: {
+    status?: string;
+    primary_constraint?: string;
+    highest_opportunity?: string;
+    estimated_impact?: string;
+  };
+  priority_matrix?: { task?: string; impact?: string; effort?: string; why?: string }[];
+  pillars?: Record<string, PillarScore>;
+};
+
+export type WorkspaceMessage =
+  | { id: string; role: "user"; kind: "text"; content: string }
+  | { id: string; role: "verdict"; kind: "text"; content: string }
+  | { id: string; role: "verdict"; kind: "trace"; events: ActivityEvent[] }
+  | { id: string; role: "verdict"; kind: "result"; summary: string; result: AuditSummary };
+
+export type WorkspacePhase = "idle" | "investigating" | "complete";
