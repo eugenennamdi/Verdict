@@ -1,4 +1,5 @@
 import { isAddress } from "ethers";
+import { generateJwt } from "@coinbase/cdp-sdk/auth";
 import {
   HTTPFacilitatorClient,
   type FacilitatorClient,
@@ -11,6 +12,7 @@ import type { NextRequest, NextResponse } from "next/server";
 import {
   DEFAULT_VERDICT_AUDIT_PRICE,
   VERDICT_AUDIT_DESCRIPTION,
+  VERDICT_CDP_FACILITATOR_URL,
   VERDICT_X402_NETWORKS,
   type VerdictX402Network,
 } from "@/lib/x402/constants";
@@ -18,6 +20,7 @@ import {
 export {
   DEFAULT_VERDICT_AUDIT_PRICE,
   VERDICT_AUDIT_DESCRIPTION,
+  VERDICT_CDP_FACILITATOR_URL,
   VERDICT_X402_NETWORKS,
 } from "@/lib/x402/constants";
 export type { VerdictX402Network } from "@/lib/x402/constants";
@@ -28,11 +31,21 @@ const REQUIRED_ENV = [
   "VERDICT_X402_FACILITATOR_URL",
 ] as const;
 
+const REQUIRED_CDP_ENV = ["CDP_API_KEY_ID", "CDP_API_KEY_SECRET"] as const;
+
 export type VerdictX402Config = {
   network: VerdictX402Network;
   price: string;
   payTo: `0x${string}`;
   facilitatorUrl: string;
+  facilitatorAuth?: "cdp";
+};
+
+type GenerateCdpJwt = typeof generateJwt;
+
+type VerdictFacilitatorClientOptions = {
+  env?: NodeJS.ProcessEnv;
+  generateJwt?: GenerateCdpJwt;
 };
 
 export class VerdictX402ConfigurationError extends Error {
@@ -146,16 +159,48 @@ export function loadVerdictX402Config(
     );
   }
 
+  const facilitatorUrl = parseFacilitatorUrl(
+    requiredValue(env, "VERDICT_X402_FACILITATOR_URL"),
+    network
+  );
+  const usesCdpFacilitator = facilitatorUrl === VERDICT_CDP_FACILITATOR_URL;
+
+  if (
+    network === VERDICT_X402_NETWORKS.baseMainnet &&
+    !usesCdpFacilitator
+  ) {
+    throw new VerdictX402ConfigurationError(
+      `Base Mainnet x402 configuration must use the CDP facilitator at ${VERDICT_CDP_FACILITATOR_URL}`
+    );
+  }
+  if (
+    network === VERDICT_X402_NETWORKS.baseSepolia &&
+    usesCdpFacilitator
+  ) {
+    throw new VerdictX402ConfigurationError(
+      "The CDP production facilitator requires Base Mainnet (eip155:8453)"
+    );
+  }
+
+  if (usesCdpFacilitator) {
+    const missingCredentials = REQUIRED_CDP_ENV.filter(
+      (name) => !env[name]?.trim()
+    );
+    if (missingCredentials.length > 0) {
+      throw new VerdictX402ConfigurationError(
+        `Missing required CDP facilitator credentials: ${missingCredentials.join(", ")}`
+      );
+    }
+  }
+
   return {
     network,
     price: parsePrice(
       env.VERDICT_X402_AUDIT_PRICE?.trim() || DEFAULT_VERDICT_AUDIT_PRICE
     ),
     payTo: payTo as `0x${string}`,
-    facilitatorUrl: parseFacilitatorUrl(
-      requiredValue(env, "VERDICT_X402_FACILITATOR_URL"),
-      network
-    ),
+    facilitatorUrl,
+    ...(usesCdpFacilitator ? { facilitatorAuth: "cdp" as const } : {}),
   };
 }
 
@@ -176,11 +221,71 @@ export function createVerdictAuditPaymentConfig(
   };
 }
 
+function requiredCdpCredential(
+  env: NodeJS.ProcessEnv,
+  name: (typeof REQUIRED_CDP_ENV)[number]
+): string {
+  const value = env[name];
+  if (!value?.trim()) {
+    throw new VerdictX402ConfigurationError(
+      `Missing required CDP facilitator credential: ${name}`
+    );
+  }
+  return value;
+}
+
+export function createVerdictFacilitatorClient(
+  config: VerdictX402Config,
+  options: VerdictFacilitatorClientOptions = {}
+): HTTPFacilitatorClient {
+  if (config.facilitatorAuth !== "cdp") {
+    return new HTTPFacilitatorClient({ url: config.facilitatorUrl });
+  }
+
+  const env = options.env ?? process.env;
+  const apiKeyId = requiredCdpCredential(env, "CDP_API_KEY_ID");
+  const apiKeySecret = requiredCdpCredential(env, "CDP_API_KEY_SECRET");
+  const jwtGenerator = options.generateJwt ?? generateJwt;
+  const facilitatorUrl = new URL(config.facilitatorUrl);
+  const basePath = facilitatorUrl.pathname.replace(/\/$/, "");
+
+  async function authorizationHeader(
+    requestMethod: "GET" | "POST",
+    operation: "supported" | "verify" | "settle"
+  ): Promise<Record<string, string>> {
+    try {
+      const token = await jwtGenerator({
+        apiKeyId,
+        apiKeySecret,
+        requestMethod,
+        requestHost: facilitatorUrl.host,
+        requestPath: `${basePath}/${operation}`,
+        expiresIn: 120,
+      });
+      return { Authorization: `Bearer ${token}` };
+    } catch {
+      throw new VerdictX402ConfigurationError(
+        "Failed to generate CDP facilitator authentication"
+      );
+    }
+  }
+
+  return new HTTPFacilitatorClient({
+    url: config.facilitatorUrl,
+    createAuthHeaders: async () => {
+      const [supported, verify, settle] = await Promise.all([
+        authorizationHeader("GET", "supported"),
+        authorizationHeader("POST", "verify"),
+        authorizationHeader("POST", "settle"),
+      ]);
+      return { supported, verify, settle };
+    },
+  });
+}
+
 export function createVerdictX402ResourceServer(
   config: VerdictX402Config,
-  facilitator: FacilitatorClient = new HTTPFacilitatorClient({
-    url: config.facilitatorUrl,
-  })
+  facilitator: FacilitatorClient = createVerdictFacilitatorClient(config)
 ): x402ResourceServer {
   return new x402ResourceServer(facilitator).register(
     config.network,

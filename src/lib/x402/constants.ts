@@ -8,5 +8,8 @@ export type VerdictX402Network =
 
 export const DEFAULT_VERDICT_AUDIT_PRICE = "$0.50";
 
+export const VERDICT_CDP_FACILITATOR_URL =
+  "https://api.cdp.coinbase.com/platform/v2/x402";
+
 export const VERDICT_AUDIT_DESCRIPTION =
   "Autonomous Verdict growth investigation";
