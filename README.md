@@ -78,6 +78,24 @@ Running headless browsers and large LLM context windows is compute-heavy.
   3. **Autonomous Settlement:** The agent autonomously signs and executes the transaction on **[X Layer](https://web3.okx.com/xlayer)** using [Onchain OS](https://web3.okx.com/onchainos/dev-docs/home/what-is-onchainos).
   4. **Execution:** Once the payment is verified onchain, the server unlocks the compute (using chunked concurrent processing for bulk requests) and returns the finalized structured JSON audits to the agent.
 
+### Canonical Agent Audit API
+
+`POST /api/v2/audit` runs the complete bounded investigation, persists its
+report, and returns the safe public audit result as JSON. The request body is:
+
+```json
+{ "url": "https://example.com" }
+```
+
+This agent-only endpoint costs `$0.50` in USDC on Base through x402 V2. An
+unpaid request receives `402 Payment Required` and a `PAYMENT-REQUIRED` header;
+the agent signs the advertised exact-payment requirement and retries with a
+`PAYMENT-SIGNATURE` header. A successful audit includes the standard
+`PAYMENT-RESPONSE` settlement header. Configure the network, facilitator,
+receiving address, and optional price override using the variables documented
+in `.env.example`. Base Sepolia is the development/test configuration; Base
+mainnet payment has not yet been production-verified.
+
 ### Persistence, Delivery & Soulbound Attestations
 The final structured audit, complete with priority matrices and pillar scores, is persisted to a **Supabase PostgreSQL** database. 
 
