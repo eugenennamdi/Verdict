@@ -111,6 +111,7 @@ export type MapDiscovery = (input: {
 
 export type DiscoverInternalPagesOptions = {
   limit?: number;
+  timeoutMs?: number;
   mapDiscovery?: MapDiscovery;
   lookup?: LookupFn;
 };
@@ -304,13 +305,20 @@ export async function discoverInternalPages(
       Math.floor(options.limit ?? DEFAULT_DISCOVERY_CANDIDATE_LIMIT)
     )
   );
+  const timeoutMs = Math.max(
+    1,
+    Math.min(
+      FIRECRAWL_MAP_TIMEOUT_MS,
+      Math.floor(options.timeoutMs ?? FIRECRAWL_MAP_TIMEOUT_MS)
+    )
+  );
 
   let rawCandidates: string[];
   try {
     const result = await (options.mapDiscovery ?? firecrawlMapDiscovery)({
       url: root.href,
       limit: limit * 2,
-      timeoutMs: FIRECRAWL_MAP_TIMEOUT_MS,
+      timeoutMs,
     });
     rawCandidates = rawUrlsFromMapResult(result);
   } catch {

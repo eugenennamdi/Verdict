@@ -35,6 +35,8 @@ function summarizeResult(result: Awaited<ReturnType<typeof runVerdictAudit>>) {
     overallScore: result.overallScore,
     identity: result.identity,
     evidence: result.evidence,
+    evidenceCoverage: result.evidenceCoverage,
+    investigation: result.investigation,
     company_name: result.audit.company_name || result.identity.company_name,
     score_interpretation: result.audit.score_interpretation,
     the_verdict: result.audit.the_verdict,

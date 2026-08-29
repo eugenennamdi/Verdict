@@ -1,5 +1,9 @@
 import type { ActivityEvent } from "@/lib/audit/events";
-import type { EvidencePageSummary } from "@/lib/audit/evidence";
+import type {
+  EvidenceCoverage,
+  EvidencePageSummary,
+} from "@/lib/audit/evidence";
+import type { EvidenceGatherStopReason } from "@/lib/audit/gather";
 
 export type PillarScore = {
   score?: number;
@@ -17,6 +21,13 @@ export type AuditSummary = {
     primary_cta?: string;
   };
   evidence?: EvidencePageSummary[];
+  evidenceCoverage?: EvidenceCoverage;
+  investigation?: {
+    candidatesDiscovered: number;
+    planningRounds: number;
+    pageAttempts: number;
+    stopReason: EvidenceGatherStopReason;
+  };
   company_name?: string;
   score_interpretation?: string;
   the_verdict?: {

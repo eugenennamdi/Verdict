@@ -63,6 +63,34 @@ async function generateWithFallback(prompt: string, schema: unknown) {
   }
 }
 
+/**
+ * Small structured call for bounded audit planning. It deliberately does not
+ * retry: the evidence planner has a deterministic fallback.
+ */
+export async function generateStructuredJson(
+  prompt: string,
+  schema: unknown,
+  timeoutMs: number
+): Promise<string> {
+  const response = await withTimeout(
+    ai.models.generateContent({
+      model: PRIMARY_MODEL,
+      contents: prompt,
+      config: {
+        temperature: 0.0,
+        responseMimeType: "application/json",
+        responseSchema: schema,
+      },
+    }),
+    timeoutMs
+  );
+
+  if (!response.text) {
+    throw new Error("No response from evidence planner");
+  }
+  return response.text;
+}
+
 // Define explicit schemas for the structured outputs
 const extractSchema = {
   type: Type.OBJECT,

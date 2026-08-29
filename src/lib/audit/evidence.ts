@@ -19,6 +19,16 @@ export type EvidenceAcquisitionMethod =
   | "native"
   | "none";
 
+export type EvidenceSignals = {
+  wordCount: number;
+  headingCount: number;
+  hasPricingLanguage: boolean;
+  hasCallToAction: boolean;
+  hasTrustSignals: boolean;
+  hasCompetitiveLanguage: boolean;
+  hasGrowthContent: boolean;
+};
+
 export type EvidencePage = {
   url: string;
   path: string;
@@ -28,13 +38,21 @@ export type EvidencePage = {
   markdown: string;
   chars: number;
   status: EvidencePageStatus;
+  summary?: string;
+  signals?: EvidenceSignals;
   error?: string;
-  signals?: Record<string, string | number | boolean>;
 };
 
 export type EvidencePageSummary = Omit<
   EvidencePage,
-  "markdown" | "error" | "signals"
+  "markdown" | "error"
+>;
+
+export type EvidenceCoverageLevel = "low" | "medium" | "high";
+
+export type EvidenceCoverageAssessment = Record<
+  EvidenceCategory,
+  EvidenceCoverageLevel
 >;
 
 export type EvidenceCoverage = {
@@ -66,6 +84,43 @@ function normalizedUrlParts(rawUrl: string): { url: string; path: string } {
   }
 }
 
+export function extractCompactEvidence(markdown: string): {
+  summary: string;
+  signals: EvidenceSignals;
+} {
+  const normalized = markdown.replace(/\s+/g, " ").trim();
+  const words = normalized ? normalized.split(" ") : [];
+  const headingCount = (markdown.match(/^#{1,6}\s+/gm) ?? []).length;
+
+  return {
+    summary: normalized.slice(0, 240),
+    signals: {
+      wordCount: words.length,
+      headingCount,
+      hasPricingLanguage:
+        /\b(pricing|price|plans?|per month|monthly|annual|\/mo)\b/i.test(
+          normalized
+        ),
+      hasCallToAction:
+        /\b(get started|start now|sign up|signup|book a demo|try (?:it )?free|contact sales)\b/i.test(
+          normalized
+        ),
+      hasTrustSignals:
+        /\b(customers?|testimonials?|trusted by|security|soc 2|case stud(?:y|ies)|reviews?)\b/i.test(
+          normalized
+        ),
+      hasCompetitiveLanguage:
+        /\b(compare|versus|vs\.?|alternatives?|competitors?|differentiat(?:e|ion))\b/i.test(
+          normalized
+        ),
+      hasGrowthContent:
+        /\b(blog|docs|changelog|integrations?|community|partners?|newsletter)\b/i.test(
+          normalized
+        ),
+    },
+  };
+}
+
 export function createEvidencePage(input: {
   url: string;
   role: EvidencePage["role"];
@@ -77,6 +132,10 @@ export function createEvidencePage(input: {
 }): EvidencePage {
   const normalized = normalizedUrlParts(input.url);
   const markdown = input.markdown ?? "";
+  const compact =
+    input.status === "acquired" && markdown
+      ? extractCompactEvidence(markdown)
+      : undefined;
 
   return {
     url: normalized.url,
@@ -87,6 +146,7 @@ export function createEvidencePage(input: {
     markdown,
     chars: markdown.length,
     status: input.status,
+    ...(compact ? compact : {}),
     ...(input.error ? { error: input.error } : {}),
   };
 }
@@ -187,6 +247,8 @@ export function summarizeEvidencePage(
     acquisitionMethod,
     chars,
     status,
+    summary,
+    signals,
   } = page;
   return {
     url,
@@ -196,6 +258,8 @@ export function summarizeEvidencePage(
     acquisitionMethod,
     chars,
     status,
+    ...(summary ? { summary } : {}),
+    ...(signals ? { signals } : {}),
   };
 }
 
@@ -217,4 +281,54 @@ export function summarizeEvidenceCoverage(
     charsTotal: pages.reduce((total, page) => total + page.chars, 0),
     categories,
   };
+}
+
+export function assessEvidenceCoverage(
+  pages: EvidencePage[]
+): EvidenceCoverageAssessment {
+  const coverage: EvidenceCoverageAssessment = {
+    identity: "low",
+    positioning: "low",
+    messaging: "low",
+    conversion: "low",
+    trust: "low",
+    market: "low",
+    growth: "low",
+  };
+
+  for (const page of pages) {
+    if (page.status !== "acquired") continue;
+
+    if (page.role === "homepage") {
+      coverage.identity = "medium";
+      coverage.positioning = "medium";
+      coverage.messaging = "medium";
+    }
+
+    if (page.category) {
+      coverage[page.category] =
+        page.role === "homepage" ? "medium" : "high";
+    }
+
+    if (page.signals?.hasPricingLanguage || page.signals?.hasCallToAction) {
+      if (coverage.conversion === "low") coverage.conversion = "medium";
+    }
+    if (page.signals?.hasTrustSignals && coverage.trust === "low") {
+      coverage.trust = "medium";
+    }
+    if (page.signals?.hasCompetitiveLanguage && coverage.market === "low") {
+      coverage.market = "medium";
+    }
+    if (page.signals?.hasGrowthContent && coverage.growth === "low") {
+      coverage.growth = "medium";
+    }
+  }
+
+  return coverage;
+}
+
+export function isEvidenceCoverageSufficient(
+  coverage: EvidenceCoverageAssessment
+): boolean {
+  return EVIDENCE_CATEGORIES.every((category) => coverage[category] !== "low");
 }

@@ -75,7 +75,10 @@ describe("evidence page", () => {
       chars: 17,
       status: "acquired",
     });
-    expect(summarizeEvidencePage(homepage)).not.toHaveProperty("markdown");
+    const summary = summarizeEvidencePage(homepage);
+    expect(summary).not.toHaveProperty("markdown");
+    expect(summary.summary).toBe("homepage evidence");
+    expect(summary.signals?.wordCount).toBe(2);
   });
 
   it("summarizes coverage without claiming sufficiency", () => {

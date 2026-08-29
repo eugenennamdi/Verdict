@@ -2,10 +2,17 @@ import { createTracer, type ActivityEvent, type EventEmitter } from "@/lib/audit
 import { acquireEvidencePage } from "@/lib/audit/acquire";
 import {
   resolveAuditBudget,
+  summarizeEvidenceCoverage,
   summarizeEvidencePage,
   type AuditBudget,
+  type EvidenceCoverage,
   type EvidencePageSummary,
 } from "@/lib/audit/evidence";
+import {
+  combineEvidenceForGrading,
+  gatherAuditEvidence,
+  type EvidenceGatherStopReason,
+} from "@/lib/audit/gather";
 import { persistReport } from "@/lib/audit/persist";
 import {
   gradeFromMarkdown,
@@ -38,6 +45,13 @@ export type RunVerdictAuditResult = {
   identity: VerdictIdentity;
   trace: ActivityEvent[];
   evidence: EvidencePageSummary[];
+  evidenceCoverage: EvidenceCoverage;
+  investigation: {
+    candidatesDiscovered: number;
+    planningRounds: number;
+    pageAttempts: number;
+    stopReason: EvidenceGatherStopReason;
+  };
 };
 
 export async function runVerdictAudit(
@@ -50,6 +64,7 @@ export async function runVerdictAudit(
   try {
     const parsed = await assertSafeAuditUrl(input.url);
     tracer.emit("audit.started", undefined, { url: parsed.href });
+    const gatherStartedAt = Date.now();
 
     const homepage = await acquireEvidencePage({
       url: parsed.href,
@@ -82,8 +97,18 @@ export async function runVerdictAudit(
       company_name: identity.company_name,
     });
 
+    const gathered = await gatherAuditEvidence({
+      rootUrl: parsed.href,
+      identity,
+      homepage,
+      budget,
+      startedAt: gatherStartedAt,
+      tracer,
+    });
+    const graderEvidence = combineEvidenceForGrading(gathered.pages, budget);
+
     tracer.emit("scoring.started");
-    const audit = await gradeFromMarkdown(parsed.href, markdown);
+    const audit = await gradeFromMarkdown(parsed.href, graderEvidence);
     const overallScore = audit.overallScore;
 
     let reportId: string | undefined;
@@ -107,7 +132,14 @@ export async function runVerdictAudit(
       overallScore,
       identity,
       trace: tracer.events,
-      evidence: [summarizeEvidencePage(homepage)],
+      evidence: gathered.pages.map(summarizeEvidencePage),
+      evidenceCoverage: summarizeEvidenceCoverage(gathered.pages),
+      investigation: {
+        candidatesDiscovered: gathered.candidatesDiscovered,
+        planningRounds: gathered.planningRounds,
+        pageAttempts: gathered.pageAttempts,
+        stopReason: gathered.stopReason,
+      },
     };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
