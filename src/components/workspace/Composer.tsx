@@ -1,8 +1,7 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 import { ArrowUp, Loader2 } from "lucide-react";
-import { Textarea } from "@/components/ui/textarea";
 
 type ComposerProps = {
   value: string;
@@ -11,6 +10,7 @@ type ComposerProps = {
   disabled?: boolean;
   investigating?: boolean;
   placeholder?: string;
+  targetDomain?: string;
 };
 
 export function Composer({
@@ -20,8 +20,17 @@ export function Composer({
   disabled,
   investigating,
   placeholder = "Ask Verdict anything or paste a startup URL...",
+  targetDomain,
 }: ComposerProps) {
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
+  }, [value]);
 
   const submit = () => {
     if (disabled || investigating || !value.trim()) return;
@@ -29,39 +38,46 @@ export function Composer({
   };
 
   return (
-    <div className="relative">
-      <label htmlFor="verdict-composer" className="sr-only">
-        Message Verdict
-      </label>
-      <Textarea
-        id="verdict-composer"
-        ref={ref}
-        value={value}
-        disabled={disabled || investigating}
-        placeholder={placeholder}
-        rows={1}
-        onChange={(event) => onChange(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            submit();
-          }
-        }}
-        className="min-h-[56px] max-h-40 resize-none rounded-2xl border-slate-200 bg-white/90 px-4 py-3.5 pr-14 text-[15px] leading-relaxed shadow-sm placeholder:text-slate-400 focus-visible:border-orange-500/40 focus-visible:ring-orange-500/20 dark:border-slate-800 dark:bg-slate-900/80 dark:placeholder:text-slate-500"
-      />
-      <button
-        type="button"
-        onClick={submit}
-        disabled={disabled || investigating || !value.trim()}
-        aria-label={investigating ? "Investigation in progress" : "Send message"}
-        className="absolute right-2.5 bottom-2.5 inline-flex size-9 items-center justify-center rounded-xl bg-orange-500 text-white shadow-sm transition-colors hover:bg-orange-600 disabled:pointer-events-none disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
-      >
-        {investigating ? (
-          <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
-        ) : (
-          <ArrowUp className="size-4" strokeWidth={2.5} />
-        )}
-      </button>
+    <div className="relative w-full rounded-2xl border border-slate-200/90 bg-white shadow-2xs transition-all duration-150 focus-within:border-slate-400 dark:border-slate-800/90 dark:bg-slate-900/90 dark:focus-within:border-slate-600">
+
+      <div className="relative flex items-end">
+        <label htmlFor="verdict-composer" className="sr-only">
+          Message Verdict
+        </label>
+        <textarea
+          id="verdict-composer"
+          ref={textareaRef}
+          value={value}
+          disabled={disabled || investigating}
+          placeholder={placeholder}
+          rows={1}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              submit();
+            }
+          }}
+          className="w-full min-h-[52px] max-h-44 resize-none bg-transparent px-4 py-3.5 pr-14 text-[14px] leading-relaxed text-slate-900 placeholder:text-slate-400 outline-none focus:outline-none dark:text-white dark:placeholder:text-slate-500"
+        />
+
+        <div className="absolute right-2.5 bottom-2.5 flex items-center">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={disabled || investigating || !value.trim()}
+            aria-label={investigating ? "Investigation in progress" : "Send message"}
+            className="inline-flex size-8 items-center justify-center rounded-xl bg-orange-500 text-white shadow-xs transition-all duration-150 hover:bg-orange-600 active:scale-[0.96] disabled:pointer-events-none disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-600"
+          >
+            {investigating ? (
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
+            ) : (
+              <ArrowUp className="size-4" strokeWidth={2.5} />
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
+

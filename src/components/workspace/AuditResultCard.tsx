@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, TrendingUp, AlertTriangle, ShieldCheck } from "lucide-react";
 import type { AuditSummary, PillarScore } from "./types";
 
 const PILLAR_LABELS: Record<string, string> = {
@@ -20,6 +20,12 @@ function scoreColor(score: number) {
   return "text-rose-600 dark:text-rose-400";
 }
 
+function scoreBg(score: number) {
+  if (score >= 80) return "bg-emerald-500/10 text-emerald-600 border-emerald-500/20";
+  if (score >= 50) return "bg-orange-500/10 text-orange-600 border-orange-500/20";
+  return "bg-rose-500/10 text-rose-600 border-rose-500/20";
+}
+
 function rankedPillars(pillars: Record<string, PillarScore> | undefined) {
   if (!pillars) return [];
   return Object.entries(pillars)
@@ -33,93 +39,157 @@ function rankedPillars(pillars: Record<string, PillarScore> | undefined) {
 
 type AuditResultCardProps = {
   result: AuditSummary;
+  onOpenAuditContext?: () => void;
 };
 
-export function AuditResultCard({ result }: AuditResultCardProps) {
-  const score = Number(result.overallScore || 0);
-  const company = result.identity?.company_name || result.company_name || "Startup";
+export function AuditResultCard({ result, onOpenAuditContext }: AuditResultCardProps) {
+  const overall = Number(result.overallScore || 0);
+  const company = result.identity?.company_name || result.company_name || "Target Startup";
+  const desc = result.identity?.inferred_description;
+  const reportId = result.reportId;
+  const constraint = result.the_verdict?.primary_constraint || result.score_interpretation;
+  const priorities = (result.priority_matrix || []).slice(0, 3);
   const ranked = rankedPillars(result.pillars);
   const strongest = ranked[0];
-  const weakest = ranked[ranked.length - 1];
-  const priorities = (result.priority_matrix || []).slice(0, 3);
-  const pages = result.evidence?.length || 1;
-  const reportId = result.reportId;
+  const weakest = ranked.length > 1 ? ranked[ranked.length - 1] : undefined;
 
   return (
-    <article className="w-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
-            Growth Readiness
+    <article
+      className="w-full rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs transition-all duration-200 dark:border-slate-800/90 dark:bg-slate-900/90 font-sans"
+      aria-label="Audit summary card"
+    >
+      {/* Header: Company, Eyebrow & Score */}
+      <div className="border-b border-slate-100 pb-5 dark:border-slate-800 space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <span className="text-[10.5px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 block">
+              Verdict
+            </span>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white truncate">
+              {company}
+            </h2>
+          </div>
+
+          <div className="flex flex-col items-end shrink-0">
+            <div className="flex items-baseline gap-1">
+              <span className={`text-3xl font-black tabular-nums tracking-tight ${scoreColor(overall)}`}>
+                {overall}
+              </span>
+              <span className="text-[13px] font-bold text-slate-300 dark:text-slate-600">/100</span>
+            </div>
+            <span className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mt-0.5">
+              Readiness Score
+            </span>
+          </div>
+        </div>
+
+        {desc && (
+          <p className="text-[13.5px] text-slate-600 dark:text-slate-400 leading-relaxed pt-0.5">
+            {desc}
           </p>
-          <h3 className="mt-1 text-xl font-black tracking-tight text-slate-900 dark:text-white">
-            {company}
-          </h3>
-        </div>
-        <div className="text-right">
-          <span className={`text-4xl font-black tracking-tighter ${scoreColor(score)}`}>
-            {score}
-          </span>
-          <span className="text-sm font-bold text-slate-300 dark:text-slate-600">/100</span>
-        </div>
+        )}
       </div>
 
-      {result.the_verdict?.primary_constraint && (
-        <p className="mt-4 text-[14px] leading-relaxed text-slate-600 dark:text-slate-300">
-          <span className="font-semibold text-slate-900 dark:text-white">Primary bottleneck. </span>
-          {result.the_verdict.primary_constraint}
-        </p>
+      {/* Primary Bottleneck Callout */}
+      {constraint && (
+        <div className="mt-5 rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-800/80 dark:bg-slate-900/40">
+          <p className="text-[10.5px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+            Primary Bottleneck
+          </p>
+          <p className="mt-1.5 text-[13.5px] leading-relaxed font-medium text-slate-900 dark:text-slate-100">
+            {constraint}
+          </p>
+        </div>
       )}
 
+      {/* Top Priorities / Recommended Next Moves */}
       {priorities.length > 0 && (
-        <div className="mt-5">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
-            Top priorities
-          </p>
-          <ol className="mt-2 space-y-1.5">
+        <div className="mt-6">
+          <div className="flex items-center justify-between pb-1">
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+              Recommended Priorities
+            </p>
+            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+              Impact
+            </span>
+          </div>
+
+          <div className="mt-2.5 space-y-2">
             {priorities.map((item, index) => (
-              <li key={index} className="text-[13px] leading-snug text-slate-700 dark:text-slate-300">
-                <span className="mr-2 font-black text-slate-400">{index + 1}.</span>
-                {item.task}
-              </li>
+              <div
+                key={index}
+                className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3.5 dark:border-slate-800/60 dark:bg-slate-800/30"
+              >
+                <span className="flex size-5.5 shrink-0 items-center justify-center rounded-lg bg-slate-200/80 text-[11px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  {index + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13.5px] font-bold leading-snug text-slate-900 dark:text-white">
+                    {item.task}
+                  </p>
+                  {item.why && (
+                    <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                      {item.why}
+                    </p>
+                  )}
+                </div>
+                {item.impact && (
+                  <span className="shrink-0 rounded-md border border-slate-200/80 bg-white px-2 py-0.5 text-[10.5px] font-bold text-slate-600 shadow-2xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 mt-0.5">
+                    {item.impact}
+                  </span>
+                )}
+              </div>
             ))}
-          </ol>
+          </div>
         </div>
       )}
 
-      <div className="mt-5 grid grid-cols-2 gap-3 text-[12px]">
+      {/* Strongest & Weakest Pillar Insight Cards */}
+      <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 text-[12px]">
         {strongest && (
-          <div className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-slate-800/60">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Strongest</p>
-            <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">
-              {strongest.label} · {strongest.score}
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3.5 dark:border-emerald-500/20 dark:bg-emerald-500/5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+              Strongest Pillar
+            </span>
+            <p className="mt-1 text-[13px] font-bold text-slate-900 dark:text-white">
+              {strongest.label}
             </p>
           </div>
         )}
+
         {weakest && (
-          <div className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-slate-800/60">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Weakest</p>
-            <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">
-              {weakest.label} · {weakest.score}
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50 p-3.5 dark:border-slate-800/80 dark:bg-slate-800/40">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Weakest Pillar
+            </span>
+            <p className="mt-1 text-[13px] font-bold text-slate-900 dark:text-white">
+              {weakest.label}
             </p>
           </div>
         )}
       </div>
 
-      <div className="mt-5 flex items-center justify-between gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
-        <p className="text-[12px] text-slate-400">
-          {pages} page inspected
-        </p>
-        {reportId ? (
+      {/* Footer Actions */}
+      <div className="mt-6 flex items-center justify-between gap-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+        <button
+          type="button"
+          onClick={onOpenAuditContext}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-slate-50/80 px-3 py-1.5 text-[12.5px] font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white transition-colors"
+        >
+          <span>Audit Context</span>
+        </button>
+
+        {reportId && (
           <Link
             href={`/report/${reportId}`}
-            className="inline-flex items-center gap-1 text-[13px] font-bold text-orange-500 hover:text-orange-600"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-orange-500 px-4 py-2 text-[13px] font-bold text-white shadow-xs hover:bg-orange-600 transition-colors active:scale-[0.98]"
           >
-            Full report
-            <ArrowUpRight className="size-3.5" />
+            <span>View Full Report</span>
+            <ArrowUpRight className="size-4" />
           </Link>
-        ) : null}
+        )}
       </div>
     </article>
   );
 }
+

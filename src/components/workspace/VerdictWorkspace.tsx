@@ -5,13 +5,27 @@ import { usePostHog } from "posthog-js/react";
 import type { ActivityEvent } from "@/lib/audit/events";
 import { extractStartupUrl, FALLBACK_REPLY, rateLimitReply } from "@/lib/conversation/intents";
 import { Composer } from "./Composer";
-import { SuggestionChips } from "./SuggestionChips";
 import { MessageList } from "./MessageList";
+import { AppSidebar, VerdictLogo } from "./AppSidebar";
+import { WorkspaceTopBar } from "./WorkspaceTopBar";
+import { ContextualPanel } from "./ContextualPanel";
 import { readInvestigateStream } from "./sse";
-import type { AuditSummary, WorkspaceMessage, WorkspacePhase } from "./types";
+import type { AuditSummary, RecentInvestigation, WorkspaceMessage, WorkspacePhase } from "./types";
+
+const RECENTS_KEY = "verdict_recent_investigations";
 
 function nextId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function extractDomain(rawUrl: string): string {
+  try {
+    const formatted = rawUrl.startsWith("http") ? rawUrl : `https://${rawUrl}`;
+    const parsed = new URL(formatted);
+    return parsed.hostname.replace(/^www\./, "");
+  } catch {
+    return rawUrl.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+  }
 }
 
 function conversationalSummary(result: AuditSummary): string {
@@ -35,6 +49,22 @@ export function VerdictWorkspace() {
   const [hasCompletedAudit, setHasCompletedAudit] = useState(false);
   const [conversing, setConversing] = useState(false);
   const [activeReportId, setActiveReportId] = useState<string | undefined>();
+  const [activeUrl, setActiveUrl] = useState<string | undefined>();
+  const [activeDomain, setActiveDomain] = useState<string | undefined>();
+  const [activeCompany, setActiveCompany] = useState<string | undefined>();
+  const [activeScore, setActiveScore] = useState<number | undefined>();
+  const [activeResult, setActiveResult] = useState<AuditSummary | undefined>();
+  const [startTime, setStartTime] = useState<number | null>(null);
+
+  // Layout states
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
+  const [isMobileRightPanelOpen, setIsMobileRightPanelOpen] = useState(false);
+
+  // Recents
+  const [recents, setRecents] = useState<RecentInvestigation[]>([]);
+
   const scrollerRef = useRef<HTMLDivElement>(null);
   const liveEventsRef = useRef<ActivityEvent[]>([]);
   const inFlightRef = useRef(false);
@@ -42,12 +72,165 @@ export function VerdictWorkspace() {
   const investigating = phase === "investigating";
   const busy = investigating || conversing;
 
+  // Load recents on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(RECENTS_KEY);
+      if (raw) {
+        setRecents(JSON.parse(raw) as RecentInvestigation[]);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Auto-scroll message stream
   useEffect(() => {
     scrollerRef.current?.scrollTo({
       top: scrollerRef.current.scrollHeight,
       behavior: "smooth",
     });
   }, [messages, liveEvents, phase]);
+
+  const saveRecentItem = (url: string, result: AuditSummary, messagesSnapshot?: WorkspaceMessage[]) => {
+    const domain = extractDomain(url);
+    const company = result.identity?.company_name || result.company_name || domain;
+    const summary = conversationalSummary(result);
+    const defaultMessages: WorkspaceMessage[] = [
+      { id: nextId(), role: "user", kind: "text", content: url },
+      {
+        id: nextId(),
+        role: "verdict",
+        kind: "result",
+        summary,
+        result,
+        domain,
+      },
+      {
+        id: nextId(),
+        role: "verdict",
+        kind: "trace",
+        events: [
+          { type: "audit.started", ts: Date.now(), message: "Investigation started" },
+          { type: "site.homepage_acquired", ts: Date.now(), message: "Homepage acquired" },
+          { type: "startup.identified", ts: Date.now(), message: "Startup identified" },
+          { type: "scoring.started", ts: Date.now(), message: "Evaluating growth readiness" },
+          { type: "report.persisted", ts: Date.now(), message: "Preparing report" },
+          { type: "audit.completed", ts: Date.now(), message: "Investigation complete" },
+        ],
+        domain,
+      },
+    ];
+
+    const item: RecentInvestigation = {
+      id: nextId(),
+      url,
+      domain,
+      companyName: company,
+      score: result.overallScore,
+      reportId: result.reportId,
+      timestamp: Date.now(),
+      result,
+      summary,
+      messages: messagesSnapshot && messagesSnapshot.length > 0 ? messagesSnapshot : defaultMessages,
+    };
+
+    setRecents((prev) => {
+      const filtered = prev.filter((r) => r.url !== url);
+      const updated = [item, ...filtered].slice(0, 25);
+      try {
+        localStorage.setItem(RECENTS_KEY, JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+      return updated;
+    });
+  };
+
+  const handleRemoveRecent = (id: string) => {
+    setRecents((prev) => {
+      const updated = prev.filter((r) => r.id !== id);
+      try {
+        localStorage.setItem(RECENTS_KEY, JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+      return updated;
+    });
+  };
+
+  const handleSelectRecent = (item: RecentInvestigation) => {
+    if (busy || inFlightRef.current) return;
+
+    if (item.result) {
+      // Restore audit instantly without re-running backend investigation
+      setDraft("");
+      setPhase("complete");
+      setActiveUrl(item.url);
+      setActiveDomain(item.domain);
+      setActiveCompany(item.companyName);
+      setActiveScore(item.score);
+      setActiveReportId(item.reportId);
+      setActiveResult(item.result);
+      setLiveEvents([]);
+      liveEventsRef.current = [];
+
+      const restoredMessages: WorkspaceMessage[] =
+        item.messages && item.messages.length > 0
+          ? item.messages
+          : [
+              { id: nextId(), role: "user", kind: "text", content: item.url },
+              {
+                id: nextId(),
+                role: "verdict",
+                kind: "result",
+                summary:
+                  item.summary ||
+                  `${item.companyName} scores ${item.score}/100 on Growth Readiness. The full breakdown is in the report.`,
+                result: item.result,
+                domain: item.domain,
+              },
+              {
+                id: nextId(),
+                role: "verdict",
+                kind: "trace",
+                events: [
+                  { type: "audit.started", ts: item.timestamp, message: "Investigation started" },
+                  { type: "site.homepage_acquired", ts: item.timestamp, message: "Homepage acquired" },
+                  { type: "startup.identified", ts: item.timestamp, message: "Startup identified" },
+                  { type: "scoring.started", ts: item.timestamp, message: "Evaluating growth readiness" },
+                  { type: "report.persisted", ts: item.timestamp, message: "Preparing report" },
+                  { type: "audit.completed", ts: item.timestamp, message: "Investigation complete" },
+                ],
+                domain: item.domain,
+              },
+            ];
+
+      setMessages(restoredMessages);
+      setIsRightPanelOpen(true);
+      setHasCompletedAudit(true);
+    } else {
+      // Fallback only if no cached audit result
+      handleSend(item.url);
+    }
+  };
+
+  const handleNewInvestigation = () => {
+    setDraft("");
+    setPhase("idle");
+    setMessages([]);
+    setLiveEvents([]);
+    liveEventsRef.current = [];
+    setActiveReportId(undefined);
+    setActiveUrl(undefined);
+    setActiveDomain(undefined);
+    setActiveCompany(undefined);
+    setActiveScore(undefined);
+    setActiveResult(undefined);
+    setStartTime(null);
+    setIsRightPanelOpen(false);
+    setIsMobileRightPanelOpen(false);
+  };
 
   const push = (message: WorkspaceMessage) => {
     setMessages((current) => [...current, message]);
@@ -58,7 +241,15 @@ export function VerdictWorkspace() {
   };
 
   const runInvestigation = async (url: string) => {
+    const domain = extractDomain(url);
+    setActiveUrl(url);
+    setActiveDomain(domain);
+    setActiveCompany(undefined);
+    setActiveScore(undefined);
+    setActiveResult(undefined);
+    setStartTime(Date.now());
     setPhase("investigating");
+    setIsRightPanelOpen(true); // Auto-opens during active investigation
     liveEventsRef.current = [];
     setLiveEvents([]);
     posthog?.capture("audit_started", { url });
@@ -90,7 +281,13 @@ export function VerdictWorkspace() {
         const payload = await response.json().catch(() => ({ error: "Investigation failed." }));
         setPhase(hasCompletedAudit ? "complete" : "idle");
         posthog?.capture("audit_failed", { url, error: payload.error });
-        reply(payload.error || "I couldn't complete that investigation. Please try another URL.");
+        push({
+          id: nextId(),
+          role: "verdict",
+          kind: "error",
+          message: payload.error || "I couldn't complete that investigation. Please check the URL and try again.",
+          domain,
+        });
         return;
       }
 
@@ -100,24 +297,39 @@ export function VerdictWorkspace() {
           setLiveEvents(liveEventsRef.current);
         },
         onResult: (result) => {
-          push({
+          const company = result.identity?.company_name || result.company_name || domain;
+          setActiveCompany(company);
+          setActiveScore(result.overallScore);
+          setActiveResult(result);
+
+          const traceMsg: WorkspaceMessage = {
             id: nextId(),
             role: "verdict",
             kind: "trace",
             events: liveEventsRef.current,
-          });
-          liveEventsRef.current = [];
-          setLiveEvents([]);
-          push({
+            domain,
+          };
+          const resultMsg: WorkspaceMessage = {
             id: nextId(),
             role: "verdict",
             kind: "result",
             summary: conversationalSummary(result),
             result,
+            domain,
+          };
+
+          setMessages((current) => {
+            const nextList = [...current, resultMsg, traceMsg];
+            saveRecentItem(url, result, nextList);
+            return nextList;
           });
+
+          liveEventsRef.current = [];
+          setLiveEvents([]);
           setHasCompletedAudit(true);
           if (result.reportId) setActiveReportId(result.reportId);
           setPhase("complete");
+          setIsRightPanelOpen(true);
           posthog?.capture("audit_completed", {
             url,
             report_id: result.reportId,
@@ -131,13 +343,20 @@ export function VerdictWorkspace() {
               role: "verdict",
               kind: "trace",
               events: liveEventsRef.current,
+              domain,
             });
           }
           liveEventsRef.current = [];
           setLiveEvents([]);
           setPhase(hasCompletedAudit ? "complete" : "idle");
           posthog?.capture("audit_failed", { url, error });
-          reply(error || "I couldn't complete that investigation.");
+          push({
+            id: nextId(),
+            role: "verdict",
+            kind: "error",
+            message: error || "The investigation encountered an error and could not complete.",
+            domain,
+          });
         },
       });
     } catch (error: unknown) {
@@ -146,7 +365,13 @@ export function VerdictWorkspace() {
         url,
         error: error instanceof Error ? error.message : String(error),
       });
-      reply("The investigation stream was interrupted. Please try again.");
+      push({
+        id: nextId(),
+        role: "verdict",
+        kind: "error",
+        message: "The investigation stream was interrupted. Please try again.",
+        domain,
+      });
     }
   };
 
@@ -222,71 +447,124 @@ export function VerdictWorkspace() {
   const idle = messages.length === 0 && !busy;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {idle ? (
-        <div className="flex flex-1 flex-col items-center justify-center px-4 pb-10 pt-24">
-          <div className="w-full max-w-xl text-center">
-            <p className="text-[11px] font-black uppercase tracking-[0.28em] text-orange-500">
-              Verdict
-            </p>
-            <h1 className="mt-4 text-4xl font-black tracking-tight text-slate-900 sm:text-5xl dark:text-white">
-              What should I investigate?
-            </h1>
-            <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-slate-500 dark:text-slate-400">
-              Paste a startup URL. I&apos;ll inspect the site and return a Growth Readiness score with a shareable report.
-            </p>
-            <div className="mt-8 text-left">
-              <Composer
-                value={draft}
-                onChange={setDraft}
-                onSubmit={() => handleSend(draft)}
-                investigating={busy}
-              />
+    <div className="flex h-[100dvh] w-full overflow-hidden bg-slate-50/50 dark:bg-slate-950">
+      {/* 1. Left Sidebar */}
+      <AppSidebar
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
+        onNewInvestigation={handleNewInvestigation}
+        recents={recents}
+        onSelectRecent={handleSelectRecent}
+        onRemoveRecent={handleRemoveRecent}
+        activeUrl={activeUrl}
+        isMobileOpen={isMobileSidebarOpen}
+        onMobileClose={() => setIsMobileSidebarOpen(false)}
+      />
+
+      {/* 2. Center Workspace */}
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white dark:bg-slate-950 transition-colors">
+        {/* Workspace Top Bar */}
+        <WorkspaceTopBar
+          phase={phase}
+          targetDomain={activeDomain}
+          companyName={activeCompany}
+          hasEvents={liveEvents.length > 0 || (activeResult !== undefined)}
+          isRightPanelOpen={isRightPanelOpen}
+          onToggleRightPanel={() => {
+            setIsRightPanelOpen((prev) => !prev);
+            setIsMobileRightPanelOpen((prev) => !prev);
+          }}
+          onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
+        />
+
+        {/* Workspace Content */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {idle ? (
+            /* Idle Screen: Focused, Software waiting for work */
+            <div className="flex flex-1 flex-col items-center justify-center px-4 pb-12 pt-6">
+              <div className="w-full max-w-xl text-center">
+                <div className="mx-auto flex items-center justify-center">
+                  <VerdictLogo className="size-9 text-orange-500" />
+                </div>
+                <h1 className="mt-5 text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white">
+                  What startup are we auditing today?
+                </h1>
+                <p className="mx-auto mt-3 max-w-md text-[14.5px] leading-relaxed text-slate-500 dark:text-slate-400">
+                  Paste any startup URL to run a 60-second growth due diligence audit across 7 pillars.
+                </p>
+
+                <div className="mt-7 text-left">
+                  <Composer
+                    value={draft}
+                    onChange={setDraft}
+                    onSubmit={() => handleSend(draft)}
+                    investigating={busy}
+                    placeholder="Enter a startup URL (e.g. linear.app, stripe.com) or ask anything..."
+                  />
+                </div>
+              </div>
             </div>
-            <div className="mt-5">
-              <SuggestionChips onSelect={handleSend} disabled={busy} />
+          ) : (
+            /* Active Conversation / Investigation Stream */
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-6">
+                <div className="mx-auto w-full max-w-2xl">
+                  <MessageList
+                    messages={messages}
+                    liveEvents={liveEvents}
+                    investigating={investigating}
+                    pendingReply={conversing}
+                    activeDomain={activeDomain}
+                    startTime={startTime}
+                    onOpenRightPanel={() => {
+                      setIsRightPanelOpen(true);
+                      setIsMobileRightPanelOpen(true);
+                    }}
+                    onRetry={() => {
+                      if (activeUrl) setDraft(activeUrl);
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Anchored Bottom Composer */}
+              <div className="shrink-0 border-t border-slate-200/80 bg-white/90 px-4 py-3.5 backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-950/90">
+                <div className="mx-auto w-full max-w-2xl">
+                  <Composer
+                    value={draft}
+                    onChange={setDraft}
+                    onSubmit={() => handleSend(draft)}
+                    investigating={busy}
+                    targetDomain={activeDomain}
+                    placeholder={
+                      investigating
+                        ? "Investigation in progress..."
+                        : conversing
+                          ? "Verdict is responding..."
+                          : "Ask Verdict or paste another URL..."
+                    }
+                  />
+                </div>
+              </div>
             </div>
-            <a
-              href="https://www.producthunt.com/products/verdict-7"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-8 inline-flex items-center gap-1.5 text-[11px] text-slate-400 transition-colors hover:text-slate-600 dark:hover:text-slate-300"
-            >
-              Live on Product Hunt
-            </a>
-          </div>
+          )}
         </div>
-      ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-24">
-            <div className="mx-auto w-full max-w-xl">
-              <MessageList
-                messages={messages}
-                liveEvents={liveEvents}
-                investigating={investigating}
-                pendingReply={conversing}
-              />
-            </div>
-          </div>
-          <div className="shrink-0 border-t border-slate-200/70 bg-slate-50/90 px-4 py-3 backdrop-blur-md dark:border-slate-800/70 dark:bg-slate-950/80">
-            <div className="mx-auto w-full max-w-xl">
-              <Composer
-                value={draft}
-                onChange={setDraft}
-                onSubmit={() => handleSend(draft)}
-                investigating={busy}
-                placeholder={
-                  investigating
-                    ? "Investigation in progress..."
-                    : conversing
-                      ? "Verdict is responding..."
-                      : "Ask Verdict or paste another URL..."
-                }
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      </main>
+
+      {/* 3. Contextual Investigation Panel (Right Side) */}
+      <ContextualPanel
+        phase={phase}
+        events={liveEvents.length > 0 ? liveEvents : (activeResult ? [{ type: "audit.completed", ts: Date.now(), message: "Investigation complete" }] : [])}
+        startTime={startTime}
+        targetUrl={activeUrl}
+        targetDomain={activeDomain}
+        auditResult={activeResult}
+        isOpen={isRightPanelOpen}
+        onClose={() => setIsRightPanelOpen(false)}
+        isMobileOpen={isMobileRightPanelOpen}
+        onMobileClose={() => setIsMobileRightPanelOpen(false)}
+      />
     </div>
   );
 }
+

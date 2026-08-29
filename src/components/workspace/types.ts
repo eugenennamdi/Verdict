@@ -28,10 +28,24 @@ export type AuditSummary = {
   pillars?: Record<string, PillarScore>;
 };
 
+export type RecentInvestigation = {
+  id: string;
+  url: string;
+  domain: string;
+  companyName: string;
+  score: number;
+  reportId?: string;
+  timestamp: number;
+  result?: AuditSummary;
+  summary?: string;
+  messages?: WorkspaceMessage[];
+};
+
 export type WorkspaceMessage =
   | { id: string; role: "user"; kind: "text"; content: string }
   | { id: string; role: "verdict"; kind: "text"; content: string }
-  | { id: string; role: "verdict"; kind: "trace"; events: ActivityEvent[] }
-  | { id: string; role: "verdict"; kind: "result"; summary: string; result: AuditSummary };
+  | { id: string; role: "verdict"; kind: "trace"; events: ActivityEvent[]; domain?: string }
+  | { id: string; role: "verdict"; kind: "result"; summary: string; result: AuditSummary; domain?: string }
+  | { id: string; role: "verdict"; kind: "error"; message: string; domain?: string };
 
 export type WorkspacePhase = "idle" | "investigating" | "complete";

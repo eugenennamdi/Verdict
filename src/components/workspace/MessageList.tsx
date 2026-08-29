@@ -1,34 +1,23 @@
 "use client";
 
-import Link from "next/link";
 import type { WorkspaceMessage } from "./types";
-import { InvestigationTrace } from "./InvestigationTrace";
 import { AuditResultCard } from "./AuditResultCard";
+import { InvestigationError } from "./InvestigationError";
 import type { ActivityEvent } from "@/lib/audit/events";
-
-function linkify(text: string) {
-  const parts = text.split(/(\/docs(?:\/[a-z0-9\-]+)?)/gi);
-  return parts.map((part, index) => {
-    if (part.startsWith("/docs")) {
-      return (
-        <Link
-          key={`${part}-${index}`}
-          href={part}
-          className="font-semibold text-orange-500 hover:text-orange-600"
-        >
-          {part}
-        </Link>
-      );
-    }
-    return <span key={index}>{part}</span>;
-  });
-}
+import { FormattedMessage } from "./FormattedMessage";
+import { VerdictLogo } from "./AppSidebar";
+import { AgentLoadingState } from "./AgentLoadingState";
+import { GroundedTelemetryCard } from "./GroundedTelemetryCard";
 
 type MessageListProps = {
   messages: WorkspaceMessage[];
   liveEvents: ActivityEvent[];
   investigating: boolean;
   pendingReply?: boolean;
+  activeDomain?: string;
+  startTime?: number | null;
+  onOpenRightPanel?: () => void;
+  onRetry?: () => void;
 };
 
 export function MessageList({
@@ -36,66 +25,103 @@ export function MessageList({
   liveEvents,
   investigating,
   pendingReply,
+  activeDomain,
+  startTime,
+  onOpenRightPanel,
+  onRetry,
 }: MessageListProps) {
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6">
       {messages.map((message) => {
+        // User Message: Small, restrained, right-aligned
         if (message.kind === "text" && message.role === "user") {
           return (
             <div key={message.id} className="flex justify-end">
-              <div className="max-w-[85%] rounded-2xl bg-slate-900 px-4 py-2.5 text-[14px] leading-relaxed text-white dark:bg-white dark:text-slate-900">
+              <div className="max-w-[85%] rounded-2xl rounded-tr-xs bg-slate-900 px-4 py-2.5 text-[14px] leading-relaxed text-white dark:bg-slate-800 dark:text-slate-100 shadow-2xs">
                 {message.content}
               </div>
             </div>
           );
         }
 
-        if (message.kind === "text") {
+        // Verdict Editorial Text Response
+        if (message.kind === "text" && message.role === "verdict") {
           return (
-            <div key={message.id} className="max-w-[92%] whitespace-pre-wrap text-[15px] leading-relaxed text-slate-700 dark:text-slate-200">
-              {linkify(message.content)}
+            <div key={message.id} className="flex items-start gap-3 max-w-[95%]">
+              <div className="flex size-5 shrink-0 items-center justify-center text-orange-500 mt-0.5">
+                <VerdictLogo className="size-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <FormattedMessage content={message.content} />
+              </div>
             </div>
           );
         }
 
+        // Grounded Intelligence & Tool Telemetry beneath report
         if (message.kind === "trace") {
           return (
-            <InvestigationTrace
+            <GroundedTelemetryCard
               key={message.id}
+              domain={message.domain || activeDomain}
               events={message.events}
-              active={false}
             />
           );
         }
 
+        // Result Card in Stream
         if (message.kind === "result") {
           return (
             <div key={message.id} className="space-y-4">
-              <p className="max-w-[92%] whitespace-pre-wrap text-[15px] leading-relaxed text-slate-700 dark:text-slate-200">
-                {message.summary}
-              </p>
-              <AuditResultCard result={message.result} />
+              {message.summary && (
+                <div className="flex items-start gap-3 max-w-[95%]">
+                  <div className="flex size-5 shrink-0 items-center justify-center text-orange-500 mt-0.5">
+                    <VerdictLogo className="size-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <FormattedMessage content={message.summary} />
+                  </div>
+                </div>
+              )}
+              <AuditResultCard
+                result={message.result}
+                onOpenAuditContext={onOpenRightPanel}
+              />
             </div>
+          );
+        }
+
+        // Error Message in Stream
+        if (message.kind === "error") {
+          return (
+            <InvestigationError
+              key={message.id}
+              message={message.message}
+              onRetry={onRetry}
+            />
           );
         }
 
         return null;
       })}
 
+      {/* Live Active Audit Loading State with 3x3 Dot Matrix */}
       {investigating && (
-        <InvestigationTrace events={liveEvents} active />
+        <AgentLoadingState
+          mode="audit"
+          domain={activeDomain}
+          startTime={startTime}
+        />
       )}
 
+      {/* Pending Conversational Reply Indicator */}
       {pendingReply && (
-        <p className="text-[13px] text-slate-400 dark:text-slate-500" aria-live="polite">
-          <span className="inline-flex gap-1">
-            <span className="size-1.5 animate-pulse rounded-full bg-slate-400 motion-reduce:animate-none" />
-            <span className="size-1.5 animate-pulse rounded-full bg-slate-400 delay-150 motion-reduce:animate-none" />
-            <span className="size-1.5 animate-pulse rounded-full bg-slate-400 delay-300 motion-reduce:animate-none" />
-          </span>
-          <span className="sr-only">Verdict is responding</span>
-        </p>
+        <AgentLoadingState
+          mode="thinking"
+          startTime={startTime}
+        />
       )}
     </div>
   );
 }
+
