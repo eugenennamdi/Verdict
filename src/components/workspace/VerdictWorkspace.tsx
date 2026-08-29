@@ -11,6 +11,7 @@ import { WorkspaceTopBar } from "./WorkspaceTopBar";
 import { ContextualPanel } from "./ContextualPanel";
 import { readInvestigateStream } from "./sse";
 import type { AuditSummary, RecentInvestigation, WorkspaceMessage, WorkspacePhase } from "./types";
+import { conversationalAuditSummary } from "./investigationPresentation";
 
 const RECENTS_KEY = "verdict_recent_investigations";
 
@@ -28,16 +29,17 @@ function extractDomain(rawUrl: string): string {
   }
 }
 
-function conversationalSummary(result: AuditSummary): string {
-  const company = result.identity?.company_name || result.company_name || "This startup";
-  const score = result.overallScore;
-  const constraint = result.the_verdict?.primary_constraint;
-  const interpretation = result.score_interpretation;
-  const lines = [`${company} scores ${score}/100 on Growth Readiness.`];
-  if (constraint) lines.push(`The primary bottleneck is ${constraint.replace(/\.$/, "")}.`);
-  else if (interpretation) lines.push(interpretation);
-  lines.push("The full breakdown is in the report.");
-  return lines.join(" ");
+function compactRecentResult(result: AuditSummary): AuditSummary {
+  const {
+    evidence: _evidence,
+    evidenceCoverage: _evidenceCoverage,
+    finalCoverage: _finalCoverage,
+    budgetUsage: _budgetUsage,
+    investigation: _investigation,
+    stopReason: _stopReason,
+    ...compact
+  } = result;
+  return compact;
 }
 
 export function VerdictWorkspace() {
@@ -46,6 +48,7 @@ export function VerdictWorkspace() {
   const [phase, setPhase] = useState<WorkspacePhase>("idle");
   const [messages, setMessages] = useState<WorkspaceMessage[]>([]);
   const [liveEvents, setLiveEvents] = useState<ActivityEvent[]>([]);
+  const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const [hasCompletedAudit, setHasCompletedAudit] = useState(false);
   const [conversing, setConversing] = useState(false);
   const [activeReportId, setActiveReportId] = useState<string | undefined>();
@@ -77,7 +80,14 @@ export function VerdictWorkspace() {
     try {
       const raw = localStorage.getItem(RECENTS_KEY);
       if (raw) {
-        setRecents(JSON.parse(raw) as RecentInvestigation[]);
+        const stored = JSON.parse(raw) as RecentInvestigation[];
+        const compact = stored.map((item) => ({
+          ...item,
+          ...(item.result ? { result: compactRecentResult(item.result) } : {}),
+          messages: undefined,
+        }));
+        setRecents(compact);
+        localStorage.setItem(RECENTS_KEY, JSON.stringify(compact));
       }
     } catch {
       // ignore
@@ -92,35 +102,10 @@ export function VerdictWorkspace() {
     });
   }, [messages, liveEvents, phase]);
 
-  const saveRecentItem = (url: string, result: AuditSummary, messagesSnapshot?: WorkspaceMessage[]) => {
+  const saveRecentItem = (url: string, result: AuditSummary) => {
     const domain = extractDomain(url);
     const company = result.identity?.company_name || result.company_name || domain;
-    const summary = conversationalSummary(result);
-    const defaultMessages: WorkspaceMessage[] = [
-      { id: nextId(), role: "user", kind: "text", content: url },
-      {
-        id: nextId(),
-        role: "verdict",
-        kind: "result",
-        summary,
-        result,
-        domain,
-      },
-      {
-        id: nextId(),
-        role: "verdict",
-        kind: "trace",
-        events: [
-          { type: "audit.started", ts: Date.now(), message: "Investigation started" },
-          { type: "site.homepage_acquired", ts: Date.now(), message: "Homepage acquired" },
-          { type: "startup.identified", ts: Date.now(), message: "Startup identified" },
-          { type: "scoring.started", ts: Date.now(), message: "Evaluating growth readiness" },
-          { type: "report.persisted", ts: Date.now(), message: "Preparing report" },
-          { type: "audit.completed", ts: Date.now(), message: "Investigation complete" },
-        ],
-        domain,
-      },
-    ];
+    const summary = conversationalAuditSummary(result);
 
     const item: RecentInvestigation = {
       id: nextId(),
@@ -130,9 +115,8 @@ export function VerdictWorkspace() {
       score: result.overallScore,
       reportId: result.reportId,
       timestamp: Date.now(),
-      result,
+      result: compactRecentResult(result),
       summary,
-      messages: messagesSnapshot && messagesSnapshot.length > 0 ? messagesSnapshot : defaultMessages,
     };
 
     setRecents((prev) => {
@@ -173,38 +157,22 @@ export function VerdictWorkspace() {
       setActiveReportId(item.reportId);
       setActiveResult(item.result);
       setLiveEvents([]);
+      setActivityEvents([]);
       liveEventsRef.current = [];
 
-      const restoredMessages: WorkspaceMessage[] =
-        item.messages && item.messages.length > 0
-          ? item.messages
-          : [
-              { id: nextId(), role: "user", kind: "text", content: item.url },
-              {
-                id: nextId(),
-                role: "verdict",
-                kind: "result",
-                summary:
-                  item.summary ||
-                  `${item.companyName} scores ${item.score}/100 on Growth Readiness. The full breakdown is in the report.`,
-                result: item.result,
-                domain: item.domain,
-              },
-              {
-                id: nextId(),
-                role: "verdict",
-                kind: "trace",
-                events: [
-                  { type: "audit.started", ts: item.timestamp, message: "Investigation started" },
-                  { type: "site.homepage_acquired", ts: item.timestamp, message: "Homepage acquired" },
-                  { type: "startup.identified", ts: item.timestamp, message: "Startup identified" },
-                  { type: "scoring.started", ts: item.timestamp, message: "Evaluating growth readiness" },
-                  { type: "report.persisted", ts: item.timestamp, message: "Preparing report" },
-                  { type: "audit.completed", ts: item.timestamp, message: "Investigation complete" },
-                ],
-                domain: item.domain,
-              },
-            ];
+      const restoredMessages: WorkspaceMessage[] = [
+        { id: nextId(), role: "user", kind: "text", content: item.url },
+        {
+          id: nextId(),
+          role: "verdict",
+          kind: "result",
+          summary:
+            item.summary ||
+            `${item.companyName} scores ${item.score}/100 on Growth Readiness. The full breakdown is in the report.`,
+          result: item.result,
+          domain: item.domain,
+        },
+      ];
 
       setMessages(restoredMessages);
       setIsRightPanelOpen(true);
@@ -220,6 +188,7 @@ export function VerdictWorkspace() {
     setPhase("idle");
     setMessages([]);
     setLiveEvents([]);
+    setActivityEvents([]);
     liveEventsRef.current = [];
     setActiveReportId(undefined);
     setActiveUrl(undefined);
@@ -252,6 +221,7 @@ export function VerdictWorkspace() {
     setIsRightPanelOpen(true); // Auto-opens during active investigation
     liveEventsRef.current = [];
     setLiveEvents([]);
+    setActivityEvents([]);
     posthog?.capture("audit_started", { url });
 
     try {
@@ -295,6 +265,7 @@ export function VerdictWorkspace() {
         onEvent: (event) => {
           liveEventsRef.current = [...liveEventsRef.current, event];
           setLiveEvents(liveEventsRef.current);
+          setActivityEvents(liveEventsRef.current);
         },
         onResult: (result) => {
           const company = result.identity?.company_name || result.company_name || domain;
@@ -313,14 +284,14 @@ export function VerdictWorkspace() {
             id: nextId(),
             role: "verdict",
             kind: "result",
-            summary: conversationalSummary(result),
+            summary: conversationalAuditSummary(result),
             result,
             domain,
           };
 
           setMessages((current) => {
             const nextList = [...current, resultMsg, traceMsg];
-            saveRecentItem(url, result, nextList);
+            saveRecentItem(url, result);
             return nextList;
           });
 
@@ -338,6 +309,7 @@ export function VerdictWorkspace() {
         },
         onError: (error) => {
           if (liveEventsRef.current.length > 0) {
+            setActivityEvents(liveEventsRef.current);
             push({
               id: nextId(),
               role: "verdict",
@@ -554,7 +526,7 @@ export function VerdictWorkspace() {
       {/* 3. Contextual Investigation Panel (Right Side) */}
       <ContextualPanel
         phase={phase}
-        events={liveEvents.length > 0 ? liveEvents : (activeResult ? [{ type: "audit.completed", ts: Date.now(), message: "Investigation complete" }] : [])}
+        events={liveEvents.length > 0 ? liveEvents : activityEvents}
         startTime={startTime}
         targetUrl={activeUrl}
         targetDomain={activeDomain}
@@ -567,4 +539,3 @@ export function VerdictWorkspace() {
     </div>
   );
 }
-

@@ -1,27 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Loader2, Circle, AlertCircle, ChevronDown, ChevronUp, Activity } from "lucide-react";
-import type { ActivityEvent, ActivityEventType } from "@/lib/audit/events";
-
-const PHASE2_LABELS: Partial<Record<ActivityEventType, string>> = {
-  "audit.started": "Investigation started",
-  "site.homepage_acquired": "Homepage acquired",
-  "startup.identified": "Startup identified",
-  "scoring.started": "Evaluating growth readiness",
-  "report.persisted": "Preparing report",
-  "audit.completed": "Investigation complete",
-  "audit.failed": "Investigation failed",
-};
-
-const ORDER: ActivityEventType[] = [
-  "audit.started",
-  "site.homepage_acquired",
-  "startup.identified",
-  "scoring.started",
-  "report.persisted",
-  "audit.completed",
-];
+import {
+  Activity,
+  AlertCircle,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+} from "lucide-react";
+import type { ActivityEvent } from "@/lib/audit/events";
+import {
+  inspectedPageCountFromEvents,
+  presentActivityEvents,
+} from "./investigationPresentation";
 
 type InvestigationTraceProps = {
   events: ActivityEvent[];
@@ -37,23 +29,44 @@ export function InvestigationTrace({
   onOpenPanel,
 }: InvestigationTraceProps) {
   const [expanded, setExpanded] = useState(false);
-  const seen = new Set(events.map((event) => event.type));
+  const rows = presentActivityEvents(events);
+  const latest = rows.at(-1);
   const failed = events.some((event) => event.type === "audit.failed");
-  const current = ORDER.find((type) => !seen.has(type));
+  const pagesInspected = inspectedPageCountFromEvents(events);
+  const pageLabel = `${pagesInspected} page${pagesInspected === 1 ? "" : "s"} inspected`;
 
-  const latestEvent = events[events.length - 1];
-  const activeLabel = current ? (PHASE2_LABELS[current] || current) : (latestEvent ? (PHASE2_LABELS[latestEvent.type] || latestEvent.message) : "Investigation started");
+  const inlineRows = (
+    <ol className="mt-3.5 space-y-2 border-t border-slate-200/70 pt-3 dark:border-slate-800/70">
+      {rows.map((row, index) => (
+        <li key={`${row.type}-${index}`} className="flex items-start gap-2.5 text-[12px]">
+          {row.tone === "failed" || row.tone === "warning" ? (
+            <AlertCircle
+              className={`mt-0.5 size-4 shrink-0 ${
+                row.tone === "failed" ? "text-rose-500" : "text-amber-500"
+              }`}
+            />
+          ) : row.tone === "active" && active && index === rows.length - 1 ? (
+            <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-orange-500 motion-reduce:animate-none" />
+          ) : (
+            <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-md bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+              <Check className="size-2.5" strokeWidth={3} />
+            </span>
+          )}
+          <span className="min-w-0">
+            <span className="block font-medium text-slate-900 dark:text-white">
+              {row.label}
+            </span>
+            {row.detail && (
+              <span className="block truncate text-[11px] text-slate-400 dark:text-slate-500">
+                {row.detail}
+              </span>
+            )}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
 
-  const rows = ORDER.filter((type) => {
-    if (type === "audit.completed" && failed) return false;
-    return seen.has(type) || (active && type === current);
-  });
-
-  if (failed && !rows.includes("audit.started")) {
-    rows.unshift("audit.started");
-  }
-
-  // Active state: sleek live agent activity card
   if (active) {
     return (
       <div
@@ -62,8 +75,8 @@ export function InvestigationTrace({
         aria-label="Investigation progress"
       >
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Loader2 className="size-4 animate-spin text-orange-500 shrink-0 motion-reduce:animate-none" />
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Loader2 className="size-4 shrink-0 animate-spin text-orange-500 motion-reduce:animate-none" />
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-600 dark:text-orange-400">
@@ -76,121 +89,81 @@ export function InvestigationTrace({
                 )}
               </div>
               <p className="truncate text-[13px] font-medium text-slate-700 dark:text-slate-300">
-                {activeLabel}...
+                {pageLabel} · {latest?.label ?? "Investigation started"}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex shrink-0 items-center gap-1">
             {onOpenPanel && (
               <button
                 type="button"
                 onClick={onOpenPanel}
-                className="inline-flex items-center gap-1 rounded-xl bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 shadow-2xs border border-slate-200/80 hover:border-orange-500/50 hover:text-orange-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 transition-colors"
+                className="inline-flex items-center gap-1 rounded-xl border border-slate-200/80 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 shadow-2xs transition-colors hover:border-orange-500/50 hover:text-orange-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
               >
                 <Activity className="size-3 text-orange-500" />
-                <span>Runtime Panel</span>
+                <span>View activity</span>
               </button>
             )}
             <button
               type="button"
-              onClick={() => setExpanded((prev) => !prev)}
-              className="lg:hidden inline-flex items-center gap-1 rounded-lg p-1 text-slate-500 hover:bg-slate-200/50 dark:text-slate-400"
+              onClick={() => setExpanded((previous) => !previous)}
+              className="inline-flex items-center gap-1 rounded-lg p-1 text-slate-500 hover:bg-slate-200/50 dark:text-slate-400 lg:hidden"
               aria-expanded={expanded}
-              aria-label="Toggle task details"
+              aria-label="Toggle activity details"
             >
               {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
             </button>
           </div>
         </div>
-
-        {/* Mobile / expanded inline step list */}
-        {expanded && (
-          <ol className="mt-3.5 space-y-2 border-t border-orange-500/15 pt-3">
-            {rows.map((type) => {
-              const done = seen.has(type) && type !== "audit.failed";
-              const isCurrent = active && type === current;
-              const label = PHASE2_LABELS[type] || type;
-              return (
-                <li key={type} className="flex items-center gap-2.5 text-[12px]">
-                  {done ? (
-                    <span className="flex size-4 shrink-0 items-center justify-center rounded-md bg-slate-900 text-white dark:bg-white dark:text-slate-900">
-                      <Check className="size-2.5" strokeWidth={3} />
-                    </span>
-                  ) : isCurrent ? (
-                    <span className="flex size-4 shrink-0 items-center justify-center">
-                      <Loader2 className="size-3 animate-spin text-orange-500 motion-reduce:animate-none" />
-                    </span>
-                  ) : (
-                    <span className="flex size-4 shrink-0 items-center justify-center">
-                      <Circle className="size-2.5 text-slate-300 dark:text-slate-700" />
-                    </span>
-                  )}
-                  <span
-                    className={
-                      done || isCurrent
-                        ? "font-medium text-slate-900 dark:text-white"
-                        : "text-slate-400 dark:text-slate-600"
-                    }
-                  >
-                    {label}
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
-        )}
+        {expanded && <div className="lg:hidden">{inlineRows}</div>}
       </div>
     );
   }
 
-  // Completed/Historical trace: minimal collapsible card
   return (
     <div
       className="w-full rounded-xl border border-slate-200/80 bg-white/60 px-3.5 py-2.5 text-[12px] dark:border-slate-800/80 dark:bg-slate-900/40"
       aria-label="Investigation trace summary"
     >
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="flex size-4 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
-            <Check className="size-2.5" strokeWidth={3} />
-          </span>
+        <div className="flex min-w-0 items-center gap-2">
+          {failed ? (
+            <AlertCircle className="size-4 shrink-0 text-rose-500" />
+          ) : (
+            <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+              <Check className="size-2.5" strokeWidth={3} />
+            </span>
+          )}
           <span className="font-semibold text-slate-700 dark:text-slate-300">
-            Investigation complete
+            {failed ? "Investigation failed" : "Investigation complete"}
           </span>
           <span className="text-slate-400">·</span>
-          <span className="text-slate-400">1 page inspected</span>
+          <span className="truncate text-slate-400">{pageLabel}</span>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setExpanded((prev) => !prev)}
-          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition-colors"
-        >
-          <span>{expanded ? "Hide tasks" : "Show tasks"}</span>
-          {expanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          {onOpenPanel && (
+            <button
+              type="button"
+              onClick={onOpenPanel}
+              className="hidden rounded-md px-1.5 py-0.5 text-[11px] font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white lg:inline-flex"
+            >
+              View activity
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setExpanded((previous) => !previous)}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white lg:hidden"
+            aria-expanded={expanded}
+          >
+            <span>{expanded ? "Hide" : "Activity"}</span>
+            {expanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+          </button>
+        </div>
       </div>
-
-      {expanded && (
-        <ol className="mt-3 space-y-2 border-t border-slate-100 pt-2.5 dark:border-slate-800">
-          {rows.map((type) => {
-            const done = seen.has(type) && type !== "audit.failed";
-            const label = PHASE2_LABELS[type] || type;
-            return (
-              <li key={type} className="flex items-center gap-2.5 text-[12px]">
-                <span className="flex size-4 shrink-0 items-center justify-center rounded-md bg-slate-900 text-white dark:bg-white dark:text-slate-900">
-                  <Check className="size-2.5" strokeWidth={3} />
-                </span>
-                <span className="font-medium text-slate-900 dark:text-white">
-                  {label}
-                </span>
-              </li>
-            );
-          })}
-        </ol>
-      )}
+      {expanded && <div className="lg:hidden">{inlineRows}</div>}
     </div>
   );
 }
-

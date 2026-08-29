@@ -9,6 +9,7 @@ import {
   resolveAuditBudget,
   summarizeEvidenceCoverage,
   summarizeEvidencePage,
+  isEvidenceCoverageSufficient,
 } from "./evidence";
 
 describe("audit budget", () => {
@@ -79,6 +80,23 @@ describe("evidence page", () => {
     expect(summary).not.toHaveProperty("markdown");
     expect(summary.summary).toBe("homepage evidence");
     expect(summary.signals?.wordCount).toBe(2);
+  });
+
+  it("does not call homepage-only medium coverage sufficient", () => {
+    const allMedium = {
+      identity: "medium",
+      positioning: "medium",
+      messaging: "medium",
+      conversion: "medium",
+      trust: "medium",
+      market: "medium",
+      growth: "medium",
+    } as const;
+
+    expect(isEvidenceCoverageSufficient(allMedium)).toBe(false);
+    expect(
+      isEvidenceCoverageSufficient({ ...allMedium, conversion: "high" })
+    ).toBe(true);
   });
 
   it("summarizes coverage without claiming sufficiency", () => {

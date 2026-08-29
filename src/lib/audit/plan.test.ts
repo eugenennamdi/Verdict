@@ -155,6 +155,33 @@ describe("planEvidence", () => {
     expect(plan.selections.length).toBeGreaterThan(0);
   });
 
+  it("does not accept planner done for homepage-only medium coverage", async () => {
+    const input = plannerInput();
+    input.currentCoverage = {
+      identity: "medium",
+      positioning: "medium",
+      messaging: "medium",
+      conversion: "medium",
+      trust: "medium",
+      market: "medium",
+      growth: "medium",
+    };
+
+    const plan = await planEvidence(input, {
+      generate: async () =>
+        JSON.stringify({
+          done: true,
+          coverage: input.currentCoverage,
+          missing: [],
+          selections: [],
+        }),
+    });
+
+    expect(plan.done).toBe(false);
+    expect(plan.source).toBe("fallback");
+    expect(plan.selections.length).toBeGreaterThan(0);
+  });
+
   it("sends compact evidence metadata rather than full page markdown", async () => {
     const input = plannerInput();
     input.pages = [

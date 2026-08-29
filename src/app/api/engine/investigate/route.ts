@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/dist/server/web/spec-extension/response";
 import { runVerdictAudit } from "@/lib/audit/runVerdictAudit";
+import { summarizeVerdictAuditResult } from "@/lib/audit/publicResult";
 import type { ActivityEvent } from "@/lib/audit/events";
 import { redis } from "@/lib/redis";
 import { ScrapingError } from "@/lib/engine";
@@ -27,22 +28,6 @@ function isLocalClient(ip: string): boolean {
 
 function sseFrame(payload: StreamFrame): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`);
-}
-
-function summarizeResult(result: Awaited<ReturnType<typeof runVerdictAudit>>) {
-  return {
-    reportId: result.reportId,
-    overallScore: result.overallScore,
-    identity: result.identity,
-    evidence: result.evidence,
-    evidenceCoverage: result.evidenceCoverage,
-    investigation: result.investigation,
-    company_name: result.audit.company_name || result.identity.company_name,
-    score_interpretation: result.audit.score_interpretation,
-    the_verdict: result.audit.the_verdict,
-    priority_matrix: result.audit.priority_matrix,
-    pillars: result.audit.pillars,
-  };
 }
 
 export async function POST(req: Request) {
@@ -84,7 +69,7 @@ export async function POST(req: Request) {
       try {
         const result = await runVerdictAudit({
           url,
-          persist: true,
+          persist: process.env.VERDICT_DISABLE_AUDIT_PERSISTENCE !== "true",
           onEvent: (event) => {
             send({ kind: "event", event });
           },
@@ -94,7 +79,7 @@ export async function POST(req: Request) {
           await redis.set(rateLimitKey, Date.now(), "EX", RATE_LIMIT_SECONDS);
         }
 
-        send({ kind: "result", result: summarizeResult(result) });
+        send({ kind: "result", result: summarizeVerdictAuditResult(result) });
         controller.close();
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);

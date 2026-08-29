@@ -7,7 +7,7 @@ import type { ActivityEvent } from "@/lib/audit/events";
 import { FormattedMessage } from "./FormattedMessage";
 import { VerdictLogo } from "./AppSidebar";
 import { AgentLoadingState } from "./AgentLoadingState";
-import { GroundedTelemetryCard } from "./GroundedTelemetryCard";
+import { InvestigationTrace } from "./InvestigationTrace";
 
 type MessageListProps = {
   messages: WorkspaceMessage[];
@@ -61,10 +61,12 @@ export function MessageList({
         // Grounded Intelligence & Tool Telemetry beneath report
         if (message.kind === "trace") {
           return (
-            <GroundedTelemetryCard
+            <InvestigationTrace
               key={message.id}
               domain={message.domain || activeDomain}
               events={message.events}
+              active={false}
+              onOpenPanel={onOpenRightPanel}
             />
           );
         }
@@ -105,8 +107,17 @@ export function MessageList({
         return null;
       })}
 
-      {/* Live Active Audit Loading State with 3x3 Dot Matrix */}
-      {investigating && (
+      {investigating && liveEvents.length > 0 && (
+        <InvestigationTrace
+          events={liveEvents}
+          active
+          domain={activeDomain}
+          onOpenPanel={onOpenRightPanel}
+        />
+      )}
+
+      {/* Initial live state before the first operational event arrives. */}
+      {investigating && liveEvents.length === 0 && (
         <AgentLoadingState
           mode="audit"
           domain={activeDomain}
@@ -124,4 +135,3 @@ export function MessageList({
     </div>
   );
 }
-

@@ -336,7 +336,7 @@ export async function gatherAuditEvidence(
       input.tracer.emit(
         "evidence.insufficient",
         `${labels} evidence needs more context`,
-        { categories: missingCategories }
+        { categories: missingCategories, coverage: plan.coverage }
       );
     }
 

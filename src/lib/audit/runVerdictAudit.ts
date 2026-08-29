@@ -6,8 +6,14 @@ import {
   summarizeEvidencePage,
   type AuditBudget,
   type EvidenceCoverage,
+  type EvidenceCoverageAssessment,
   type EvidencePageSummary,
 } from "@/lib/audit/evidence";
+import {
+  serializeEvidenceTrace,
+  type EvidenceBudgetUsage,
+  type EvidenceTrace,
+} from "@/lib/audit/evidenceTrace";
 import {
   combineEvidenceForGrading,
   gatherAuditEvidence,
@@ -46,6 +52,11 @@ export type RunVerdictAuditResult = {
   trace: ActivityEvent[];
   evidence: EvidencePageSummary[];
   evidenceCoverage: EvidenceCoverage;
+  finalCoverage: EvidenceCoverageAssessment;
+  pagesInspected: number;
+  budgetUsage: EvidenceBudgetUsage;
+  stopReason: EvidenceGatherStopReason;
+  evidenceTrace: EvidenceTrace;
   investigation: {
     candidatesDiscovered: number;
     planningRounds: number;
@@ -110,6 +121,14 @@ export async function runVerdictAudit(
     tracer.emit("scoring.started");
     const audit = await gradeFromMarkdown(parsed.href, graderEvidence);
     const overallScore = audit.overallScore;
+    const evidenceTrace = serializeEvidenceTrace({
+      pages: gathered.pages,
+      coverage: gathered.coverage,
+      planningRounds: gathered.planningRounds,
+      pageAttempts: gathered.pageAttempts,
+      budget,
+      stopReason: gathered.stopReason,
+    });
 
     let reportId: string | undefined;
     if (persist) {
@@ -117,6 +136,7 @@ export async function runVerdictAudit(
         url: parsed.href,
         company_name: identity.company_name || audit.company_name || "Unknown",
         audit,
+        evidenceTrace,
       });
       tracer.emit("report.persisted", undefined, { report_id: reportId });
     }
@@ -134,6 +154,11 @@ export async function runVerdictAudit(
       trace: tracer.events,
       evidence: gathered.pages.map(summarizeEvidencePage),
       evidenceCoverage: summarizeEvidenceCoverage(gathered.pages),
+      finalCoverage: gathered.coverage,
+      pagesInspected: evidenceTrace.budget.pagesInspected,
+      budgetUsage: evidenceTrace.budget,
+      stopReason: gathered.stopReason,
+      evidenceTrace,
       investigation: {
         candidatesDiscovered: gathered.candidatesDiscovered,
         planningRounds: gathered.planningRounds,

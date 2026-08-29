@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import {
   X,
   Check,
-  Loader2,
   Circle,
   AlertCircle,
   ExternalLink,
@@ -12,7 +11,16 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { ActivityEvent } from "@/lib/audit/events";
+import { EVIDENCE_CATEGORIES } from "@/lib/audit/evidence";
 import type { AuditSummary, WorkspacePhase } from "./types";
+import {
+  discoveredCandidateCount,
+  evidenceSourcesFromEvents,
+  latestCoverageFromEvents,
+  presentActivityEvents,
+  stopReasonLabel,
+  successfulEvidenceSources,
+} from "./investigationPresentation";
 
 const AUDIT_PILLARS = [
   {
@@ -101,15 +109,21 @@ export function ContextualPanel({
     return () => clearInterval(interval);
   }, [isInvestigating, startTime]);
 
-  const hasHomepage = isComplete || seen.has("site.homepage_acquired");
-  const hasIdentity = isComplete || seen.has("startup.identified");
   const hasScoring = isComplete || seen.has("scoring.started");
   const hasReport = isComplete || seen.has("report.persisted");
-  const isAllComplete = isComplete || seen.has("audit.completed");
 
   const company = auditResult?.identity?.company_name || auditResult?.company_name || targetDomain || "Startup";
   const identity = auditResult?.identity;
   const evidence = auditResult?.evidence;
+  const activityRows = presentActivityEvents(events);
+  const persistedSources = successfulEvidenceSources(evidence);
+  const sources = persistedSources.length > 0
+    ? persistedSources
+    : evidenceSourcesFromEvents(events);
+  const candidatesDiscovered =
+    auditResult?.investigation?.candidatesDiscovered ?? discoveredCandidateCount(events);
+  const coverage = auditResult?.finalCoverage ?? latestCoverageFromEvents(events);
+  const stopLabel = stopReasonLabel(auditResult?.stopReason ?? auditResult?.investigation?.stopReason);
 
   const panelContent = (
     <aside
@@ -122,6 +136,10 @@ export function ContextualPanel({
           <span className="text-[12px] font-black uppercase tracking-[0.16em] text-slate-900 dark:text-white">
             Audit Context
           </span>
+
+          {isInvestigating && (
+            <span className="font-mono text-[10px] text-slate-400">{elapsed}</span>
+          )}
 
           {failed && (
             <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/20 bg-rose-500/10 px-2 py-0.5 text-[11px] font-bold text-rose-600 dark:text-rose-400">
@@ -167,6 +185,106 @@ export function ContextualPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 text-slate-900 dark:text-slate-100">
+        {/* Real operational activity only; event payloads are deliberately whitelisted. */}
+        {activityRows.length > 0 && (
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/60">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 dark:border-slate-800/60">
+              <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+                Investigation Activity
+              </span>
+              {candidatesDiscovered > 0 && (
+                <span className="text-[10px] font-semibold text-slate-400">
+                  {candidatesDiscovered} discovered
+                </span>
+              )}
+            </div>
+            <ol className="mt-3 space-y-2.5">
+              {activityRows.map((row, index) => (
+                <li key={`${row.type}-${index}`} className="flex items-start gap-2.5 text-[12px]">
+                  {row.tone === "warning" || row.tone === "failed" ? (
+                    <AlertCircle className={`mt-0.5 size-4 shrink-0 ${row.tone === "failed" ? "text-rose-500" : "text-amber-500"}`} />
+                  ) : row.tone === "active" && isInvestigating && index === activityRows.length - 1 ? (
+                    <span className="mt-1 size-2.5 shrink-0 rounded-full bg-orange-500 ring-4 ring-orange-500/10" />
+                  ) : (
+                    <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+                      <Check className="size-2.5" strokeWidth={3} />
+                    </span>
+                  )}
+                  <span className="min-w-0">
+                    <span className="block font-medium text-slate-800 dark:text-slate-200">{row.label}</span>
+                    {row.detail && (
+                      <span className="block truncate text-[11px] text-slate-400 dark:text-slate-500">{row.detail}</span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ol>
+            {stopLabel && isComplete && (
+              <p className="mt-3 border-t border-slate-100 pt-2.5 text-[11px] text-slate-500 dark:border-slate-800/60 dark:text-slate-400">
+                {stopLabel}
+              </p>
+            )}
+          </div>
+        )}
+
+        {(sources.length > 0 || candidatesDiscovered > 0) && (
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/60">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 dark:border-slate-800/60">
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+                <Layers className="size-3" /> Sources
+              </span>
+              <span className="text-[10px] font-semibold text-slate-400">
+                {sources.length} inspected
+              </span>
+            </div>
+            <div className="mt-2.5 space-y-2">
+              {sources.map((source) => (
+                <a
+                  key={source.url}
+                  href={source.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2 transition-colors hover:border-orange-500/30 dark:border-slate-800/60 dark:bg-slate-950/40"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-[11.5px] font-semibold text-slate-800 dark:text-slate-200">
+                      {source.path === "/" ? targetDomain ?? source.url : source.path}
+                    </span>
+                    <span className="text-[10.5px] capitalize text-slate-400">
+                      {source.role === "homepage" ? "Homepage" : source.category ?? "Supporting"}
+                    </span>
+                  </span>
+                  <ExternalLink className="size-3 shrink-0 text-slate-400" />
+                </a>
+              ))}
+              {sources.length === 0 && (
+                <p className="text-[11px] text-slate-400">No additional evidence pages were acquired.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {coverage && (
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/60">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 dark:border-slate-800/60">
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+                <Sparkles className="size-3" /> Evidence Coverage
+              </span>
+              <span className="text-[9.5px] text-slate-400">Not a score</span>
+            </div>
+            <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2">
+              {EVIDENCE_CATEGORIES.map((category) => (
+                <div key={category} className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="capitalize text-slate-500 dark:text-slate-400">{category}</span>
+                  <span className={`font-semibold capitalize ${coverage[category] === "high" ? "text-emerald-600 dark:text-emerald-400" : coverage[category] === "medium" ? "text-amber-600 dark:text-amber-400" : "text-slate-400"}`}>
+                    {coverage[category]}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* 1. Extracted Startup Context & ICP */}
         <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/60 space-y-3">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5">
@@ -299,4 +417,3 @@ export function ContextualPanel({
     </>
   );
 }
-

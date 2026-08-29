@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { ArrowUpRight, CheckCircle2, TrendingUp, AlertTriangle, ShieldCheck } from "lucide-react";
 import type { AuditSummary, PillarScore } from "./types";
+import {
+  auditResultEvidenceLabel,
+  successfulEvidenceSources,
+} from "./investigationPresentation";
 
 const PILLAR_LABELS: Record<string, string> = {
   positioning: "Positioning",
@@ -52,6 +56,14 @@ export function AuditResultCard({ result, onOpenAuditContext }: AuditResultCardP
   const ranked = rankedPillars(result.pillars);
   const strongest = ranked[0];
   const weakest = ranked.length > 1 ? ranked[ranked.length - 1] : undefined;
+  const evidenceLabel = auditResultEvidenceLabel(result);
+  const evidenceCategories = Array.from(
+    new Set(
+      successfulEvidenceSources(result.evidence)
+        .map((source) => source.category)
+        .filter((category): category is NonNullable<typeof category> => Boolean(category))
+    )
+  );
 
   return (
     <article
@@ -87,6 +99,18 @@ export function AuditResultCard({ result, onOpenAuditContext }: AuditResultCardP
           <p className="text-[13.5px] text-slate-600 dark:text-slate-400 leading-relaxed pt-0.5">
             {desc}
           </p>
+        )}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+        <span className="rounded-full border border-slate-200/80 bg-slate-50 px-2.5 py-1 font-semibold dark:border-slate-800 dark:bg-slate-800/40">
+          {evidenceLabel}
+        </span>
+        {evidenceCategories.length > 0 && (
+          <span>
+            Evidence from {evidenceCategories.slice(0, 3).join(", ")}
+            {evidenceCategories.length > 3 ? ` +${evidenceCategories.length - 3}` : ""}
+          </span>
         )}
       </div>
 
@@ -192,4 +216,3 @@ export function AuditResultCard({ result, onOpenAuditContext }: AuditResultCardP
     </article>
   );
 }
-

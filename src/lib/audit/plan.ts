@@ -384,6 +384,9 @@ function validatePlannerResponse(
   }
 
   const missing = Array.from(new Set(parsed.missing));
+  if (parsed.done && !isEvidenceCoverageSufficient(coverage)) {
+    return deterministicEvidencePlan(input, "no_selection");
+  }
   const done =
     parsed.done ||
     (missing.length === 0 && isEvidenceCoverageSufficient(coverage));

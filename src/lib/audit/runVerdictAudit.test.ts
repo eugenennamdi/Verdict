@@ -111,6 +111,14 @@ describe("runVerdictAudit homepage-only regression", () => {
       pageAttempts: 1,
       stopReason: "page_budget",
     });
+    expect(result.pagesInspected).toBe(1);
+    expect(result.stopReason).toBe("page_budget");
+    expect(result.budgetUsage).toMatchObject({
+      pagesInspected: 1,
+      pagesUsed: 1,
+      maxPages: 1,
+    });
+    expect(result.finalCoverage.identity).toBe("medium");
     expect(result.trace.map((event) => event.type)).toEqual([
       "audit.started",
       "site.homepage_acquired",
@@ -155,6 +163,45 @@ describe("runVerdictAudit homepage-only regression", () => {
     ]);
     expect(result.trace.some((event) => event.type === "audit.failed")).toBe(false);
     expect(result.trace.some((event) => event.type === "evidence.acquired")).toBe(false);
+    expect(result.pagesInspected).toBe(1);
+    expect(result.evidenceTrace.pages).toHaveLength(1);
     expect(mocks.gradeFromMarkdown).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists compact evidence metadata including the stop reason", async () => {
+    mocks.persistReport.mockResolvedValue("report-1");
+
+    const result = await runVerdictAudit({
+      url: "https://example.com",
+      persist: true,
+      budget: { maxPagesTotal: 1 },
+    });
+
+    expect(result.reportId).toBe("report-1");
+    expect(mocks.persistReport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        evidenceTrace: expect.objectContaining({
+          version: 1,
+          stopReason: "page_budget",
+          coverage: result.finalCoverage,
+        }),
+      })
+    );
+    expect(JSON.stringify(mocks.persistReport.mock.calls[0][0])).not.toContain("markdown");
+  });
+
+  it("completes a valid homepage audit when discovery is unavailable", async () => {
+    mocks.discoverInternalPages.mockRejectedValue(new Error("map unavailable"));
+
+    const result = await runVerdictAudit({
+      url: "https://example.com",
+      persist: false,
+    });
+
+    expect(result.overallScore).toBe(73);
+    expect(result.pagesInspected).toBe(1);
+    expect(result.stopReason).toBe("discovery_failed");
+    expect(result.trace.at(-1)?.type).toBe("audit.completed");
+    expect(result.trace.some((item) => item.type === "audit.failed")).toBe(false);
   });
 });

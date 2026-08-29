@@ -1,8 +1,10 @@
 import type { ActivityEvent } from "@/lib/audit/events";
 import type {
   EvidenceCoverage,
+  EvidenceCoverageAssessment,
   EvidencePageSummary,
 } from "@/lib/audit/evidence";
+import type { EvidenceBudgetUsage } from "@/lib/audit/evidenceTrace";
 import type { EvidenceGatherStopReason } from "@/lib/audit/gather";
 
 export type PillarScore = {
@@ -22,6 +24,10 @@ export type AuditSummary = {
   };
   evidence?: EvidencePageSummary[];
   evidenceCoverage?: EvidenceCoverage;
+  finalCoverage?: EvidenceCoverageAssessment;
+  pagesInspected?: number;
+  budgetUsage?: EvidenceBudgetUsage;
+  stopReason?: EvidenceGatherStopReason;
   investigation?: {
     candidatesDiscovered: number;
     planningRounds: number;

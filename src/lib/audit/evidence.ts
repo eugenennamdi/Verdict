@@ -330,5 +330,8 @@ export function assessEvidenceCoverage(
 export function isEvidenceCoverageSufficient(
   coverage: EvidenceCoverageAssessment
 ): boolean {
-  return EVIDENCE_CATEGORIES.every((category) => coverage[category] !== "low");
+  return (
+    EVIDENCE_CATEGORIES.every((category) => coverage[category] !== "low") &&
+    EVIDENCE_CATEGORIES.some((category) => coverage[category] === "high")
+  );
 }
