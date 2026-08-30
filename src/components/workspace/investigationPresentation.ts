@@ -53,13 +53,15 @@ export function presentActivityEvent(
   switch (event.type) {
     case "audit.started":
       return { type: event.type, label: "Investigation started", tone: "active" };
-    case "site.homepage_acquired":
+    case "site.homepage_acquired": {
+      const path = pathFromUrl(data.url);
       return {
         type: event.type,
         label: "Homepage acquired",
-        detail: pathFromUrl(data.url),
+        detail: path && path !== "/" ? path : undefined,
         tone: "complete",
       };
+    }
     case "site.pages_discovered": {
       const count = asNumber(data.count) ?? 0;
       return {
@@ -78,20 +80,24 @@ export function presentActivityEvent(
         tone: "warning",
       };
     }
-    case "evidence.selected":
+    case "evidence.selected": {
+      const path = pathFromUrl(data.url);
       return {
         type: event.type,
-        label: `Inspecting ${pathFromUrl(data.url) ?? "selected page"}`,
+        label: `Inspecting ${path && path !== "/" ? path : "selected page"}`,
         detail: categoryLabel(data.category),
         tone: "active",
       };
-    case "evidence.acquired":
+    }
+    case "evidence.acquired": {
+      const path = pathFromUrl(data.url);
       return {
         type: event.type,
         label: `${categoryLabel(data.category) ?? "Supporting"} evidence collected`,
-        detail: pathFromUrl(data.url),
+        detail: path && path !== "/" ? path : undefined,
         tone: "complete",
       };
+    }
     case "evidence.sufficient":
       return {
         type: event.type,
@@ -119,7 +125,7 @@ export function presentActivityEvent(
 export function presentActivityEvents(
   events: ActivityEvent[]
 ): InvestigationActivityRow[] {
-  return events.map(presentActivityEvent);
+  return events.map(presentActivityEvent).filter(Boolean) as InvestigationActivityRow[];
 }
 
 export function successfulEvidenceSources(

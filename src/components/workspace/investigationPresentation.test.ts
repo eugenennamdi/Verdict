@@ -68,6 +68,23 @@ describe("workspace investigation presentation", () => {
     })).toBe("1 page inspected");
   });
 
+  it("omits redundant root slash detail on homepage and preserves real sub-paths", () => {
+    const rootHomepage = presentActivityEvents([
+      event("site.homepage_acquired", { url: "https://example.com/" }),
+    ]);
+    expect(rootHomepage[0].label).toBe("Homepage acquired");
+    expect(rootHomepage[0].detail).toBeUndefined();
+
+    const subpageAcquired = presentActivityEvents([
+      event("evidence.acquired", { url: "https://example.com/pricing", category: "conversion" }),
+      event("evidence.acquired", { url: "https://example.com/blog", category: "market" }),
+    ]);
+    expect(subpageAcquired[0].label).toBe("Conversion evidence collected");
+    expect(subpageAcquired[0].detail).toBe("/pricing");
+    expect(subpageAcquired[1].label).toBe("Market evidence collected");
+    expect(subpageAcquired[1].detail).toBe("/blog");
+  });
+
   it("uses neutral language when a hard budget stops the audit", () => {
     const summary = conversationalAuditSummary({
       overallScore: 70,

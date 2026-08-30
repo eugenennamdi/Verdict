@@ -247,7 +247,9 @@ export function VerdictWorkspace() {
     setActiveResult(undefined);
     setStartTime(Date.now());
     setPhase("investigating");
-    setIsRightPanelOpen(true); // Auto-opens during active investigation
+    if (typeof window !== "undefined" && window.innerWidth >= 1280) {
+      setIsRightPanelOpen(true);
+    }
     liveEventsRef.current = [];
     setLiveEvents([]);
     setActivityEvents([]);
@@ -518,8 +520,8 @@ export function VerdictWorkspace() {
         {/* Workspace Content */}
         <div className="relative flex min-h-0 flex-1 flex-col">
           {idle ? (
-            /* Idle Screen: Focused, Software waiting for work */
-            <div className="flex flex-1 flex-col items-center justify-start px-4 pt-[10vh] pb-16 sm:pt-[14vh]">
+            /* Idle Screen: Properly centered in workspace */
+            <div className="flex flex-1 flex-col items-center justify-center px-4 py-12">
               <div className="w-full max-w-xl text-center">
                 <div className="mx-auto flex items-center justify-center">
                   <VerdictLogo className="size-8 text-orange-500" />

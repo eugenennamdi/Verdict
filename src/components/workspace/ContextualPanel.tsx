@@ -127,22 +127,24 @@ export function ContextualPanel({
 
   const panelContent = (
     <aside
-      className="flex h-full w-[360px] max-w-[90vw] flex-col border-l border-slate-200/80 bg-slate-50/70 dark:border-slate-800/80 dark:bg-slate-900/90 backdrop-blur-md transition-all duration-200 ease-out font-sans"
-      aria-label="Audit context panel"
+      className="flex h-full w-[340px] xl:w-[360px] max-w-[90vw] flex-col border-l border-slate-200/80 bg-slate-50/75 dark:border-slate-800/80 dark:bg-slate-950/80 backdrop-blur-md transition-[width,transform] duration-200 ease-out font-sans select-text"
+      aria-label="Audit context"
     >
       {/* Panel Header */}
-      <div className="relative flex h-14 items-center justify-between border-b border-slate-200/80 px-4 dark:border-slate-800/80">
-        <div className="flex items-center gap-2.5">
-          <span className="text-[12px] font-black uppercase tracking-[0.16em] text-slate-900 dark:text-white">
+      <div className="flex h-13 items-center justify-between border-b border-slate-200/80 px-4 dark:border-slate-800/80 shrink-0">
+        <div className="flex items-center gap-2">
+          <h2 className="text-[13px] font-bold tracking-tight text-slate-950 dark:text-white">
             Audit Context
-          </span>
+          </h2>
 
           {isInvestigating && (
-            <span className="font-mono text-[10px] text-slate-400">{elapsed}</span>
+            <span className="font-mono text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+              {elapsed}
+            </span>
           )}
 
           {failed && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/20 bg-rose-500/10 px-2 py-0.5 text-[11px] font-bold text-rose-600 dark:text-rose-400">
+            <span className="inline-flex items-center gap-1 rounded-md bg-rose-500/10 px-1.5 py-0.5 text-[10.5px] font-semibold text-rose-600 dark:text-rose-400">
               <AlertCircle className="size-3" />
               Failed
             </span>
@@ -155,231 +157,278 @@ export function ContextualPanel({
             onClose();
             onMobileClose?.();
           }}
-          className="inline-flex size-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition-colors"
-          title="Close panel"
-          aria-label="Close audit context panel"
+          className="inline-flex size-7 items-center justify-center rounded-lg text-slate-400 transition-colors duration-150 hover:bg-slate-200/60 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950/20 active:scale-[0.96] dark:text-slate-500 dark:hover:bg-slate-800/80 dark:hover:text-white dark:focus-visible:ring-white/20"
+          title="Close audit context"
+          aria-label="Close audit context"
         >
           <X className="size-4" />
         </button>
-
-        {/* Clean Linear Loading Bar when Investigating */}
-        {isInvestigating && (
-          <>
-            <style>{`
-              @keyframes shimmerBar {
-                0% { transform: translateX(-100%); }
-                100% { transform: translateX(350%); }
-              }
-            `}</style>
-            <div className="absolute bottom-0 left-0 right-0 h-[2px] overflow-hidden bg-slate-100 dark:bg-slate-800">
-              <div
-                className="h-full bg-orange-500 rounded-full"
-                style={{
-                  width: "40%",
-                  animation: "shimmerBar 1.6s ease-in-out infinite",
-                }}
-              />
-            </div>
-          </>
-        )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 text-slate-900 dark:text-slate-100">
-        {/* Real operational activity only; event payloads are deliberately whitelisted. */}
+      <div className="flex-1 overflow-y-auto px-4 py-3 divide-y divide-slate-200/70 dark:divide-slate-800/70 space-y-4 text-slate-900 dark:text-slate-100">
+        {/* 1. Investigation Activity */}
         {activityRows.length > 0 && (
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/60">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 dark:border-slate-800/60">
-              <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
-                Investigation Activity
-              </span>
+          <section aria-labelledby="section-activity" className="pt-1">
+            <div className="flex items-center justify-between pb-2">
+              <h3
+                id="section-activity"
+                className="text-[12px] font-semibold text-slate-800 dark:text-slate-200"
+              >
+                Activity
+              </h3>
               {candidatesDiscovered > 0 && (
-                <span className="text-[10px] font-semibold text-slate-400">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">
                   {candidatesDiscovered} discovered
                 </span>
               )}
             </div>
-            <ol className="mt-3 space-y-2.5">
-              {activityRows.map((row, index) => (
-                <li key={`${row.type}-${index}`} className="flex items-start gap-2.5 text-[12px]">
-                  {row.tone === "warning" || row.tone === "failed" ? (
-                    <AlertCircle className={`mt-0.5 size-4 shrink-0 ${row.tone === "failed" ? "text-rose-500" : "text-amber-500"}`} />
-                  ) : row.tone === "active" && isInvestigating && index === activityRows.length - 1 ? (
-                    <span className="mt-1 size-2.5 shrink-0 rounded-full bg-orange-500 ring-4 ring-orange-500/10" />
-                  ) : (
-                    <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
-                      <Check className="size-2.5" strokeWidth={3} />
+            <ol className="space-y-2 pt-0.5" aria-live="polite">
+              {activityRows.map((row, index) => {
+                const isCurrentActive =
+                  row.tone === "active" && isInvestigating && index === activityRows.length - 1;
+                return (
+                  <li key={`${row.type}-${index}`} className="flex items-start gap-2 text-[12px]">
+                    <span className="mt-0.5 shrink-0">
+                      {row.tone === "warning" || row.tone === "failed" ? (
+                        <AlertCircle
+                          className={`size-3.5 ${
+                            row.tone === "failed" ? "text-rose-500" : "text-amber-500"
+                          }`}
+                        />
+                      ) : isCurrentActive ? (
+                        <span className="flex size-3.5 items-center justify-center">
+                          <span className="size-2 rounded-full bg-orange-500 ring-4 ring-orange-500/15" />
+                        </span>
+                      ) : (
+                        <span className="flex size-3.5 items-center justify-center rounded-full bg-slate-200/80 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                          <Check className="size-2 stroke-[3]" />
+                        </span>
+                      )}
                     </span>
-                  )}
-                  <span className="min-w-0">
-                    <span className="block font-medium text-slate-800 dark:text-slate-200">{row.label}</span>
-                    {row.detail && (
-                      <span className="block truncate text-[11px] text-slate-400 dark:text-slate-500">{row.detail}</span>
-                    )}
-                  </span>
-                </li>
-              ))}
+                    <div className="min-w-0 flex-1">
+                      <span
+                        className={`block font-medium ${
+                          isCurrentActive
+                            ? "font-semibold text-slate-950 dark:text-white"
+                            : "text-slate-800 dark:text-slate-200"
+                        }`}
+                      >
+                        {row.label}
+                      </span>
+                      {row.detail && (
+                        <span className="block truncate text-[11.5px] text-slate-500 dark:text-slate-400">
+                          {row.detail}
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
             </ol>
             {stopLabel && isComplete && (
-              <p className="mt-3 border-t border-slate-100 pt-2.5 text-[11px] text-slate-500 dark:border-slate-800/60 dark:text-slate-400">
+              <p className="mt-2.5 text-[11.5px] text-slate-500 dark:text-slate-400">
                 {stopLabel}
               </p>
             )}
-          </div>
+          </section>
         )}
 
+        {/* 2. Sources */}
         {(sources.length > 0 || candidatesDiscovered > 0) && (
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/60">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 dark:border-slate-800/60">
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
-                <Layers className="size-3" /> Sources
-              </span>
-              <span className="text-[10px] font-semibold text-slate-400">
+          <section aria-labelledby="section-sources" className="pt-3">
+            <div className="flex items-center justify-between pb-1.5">
+              <h3
+                id="section-sources"
+                className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-800 dark:text-slate-200"
+              >
+                <Layers className="size-3.5 text-slate-400 dark:text-slate-500" />
+                <span>Sources</span>
+              </h3>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">
                 {sources.length} inspected
               </span>
             </div>
-            <div className="mt-2.5 space-y-2">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
               {sources.map((source) => (
                 <a
                   key={source.url}
                   href={source.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2 transition-colors hover:border-orange-500/30 dark:border-slate-800/60 dark:bg-slate-950/40"
+                  className="group flex items-center justify-between gap-2 py-1.5 transition-colors hover:text-slate-950 dark:hover:text-white"
+                  title={source.url}
+                  aria-label={`Open source ${source.path} in a new tab`}
                 >
-                  <span className="min-w-0">
-                    <span className="block truncate text-[11.5px] font-semibold text-slate-800 dark:text-slate-200">
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate font-mono text-[12px] font-medium text-slate-800 dark:text-slate-200 group-hover:text-slate-950 dark:group-hover:text-white">
                       {source.path === "/" ? targetDomain ?? source.url : source.path}
                     </span>
-                    <span className="text-[10.5px] capitalize text-slate-400">
+                    <span className="block text-[11px] capitalize text-slate-500 dark:text-slate-400">
                       {source.role === "homepage" ? "Homepage" : source.category ?? "Supporting"}
                     </span>
-                  </span>
-                  <ExternalLink className="size-3 shrink-0 text-slate-400" />
+                  </div>
+                  <ExternalLink className="size-3 shrink-0 text-slate-400 transition-colors group-hover:text-slate-700 dark:group-hover:text-slate-200" />
                 </a>
               ))}
               {sources.length === 0 && (
-                <p className="text-[11px] text-slate-400">No additional evidence pages were acquired.</p>
+                <p className="py-2 text-[11.5px] text-slate-400">No additional evidence pages were acquired.</p>
               )}
             </div>
-          </div>
+          </section>
         )}
 
+        {/* 3. Evidence Coverage */}
         {coverage && (
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/60">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 dark:border-slate-800/60">
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
-                <Sparkles className="size-3" /> Evidence Coverage
+          <section aria-labelledby="section-coverage" className="pt-3">
+            <div className="flex items-center justify-between pb-2">
+              <h3
+                id="section-coverage"
+                className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-800 dark:text-slate-200"
+              >
+                <Sparkles className="size-3.5 text-slate-400 dark:text-slate-500" />
+                <span>Evidence coverage</span>
+              </h3>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">
+                Depth · not a score
               </span>
-              <span className="text-[9.5px] text-slate-400">Not a score</span>
             </div>
-            <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2">
-              {EVIDENCE_CATEGORIES.map((category) => (
-                <div key={category} className="flex items-center justify-between gap-2 text-[11px]">
-                  <span className="capitalize text-slate-500 dark:text-slate-400">{category}</span>
-                  <span className={`font-semibold capitalize ${coverage[category] === "high" ? "text-emerald-600 dark:text-emerald-400" : coverage[category] === "medium" ? "text-amber-600 dark:text-amber-400" : "text-slate-400"}`}>
-                    {coverage[category]}
-                  </span>
-                </div>
-              ))}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-0.5">
+              {EVIDENCE_CATEGORIES.map((category) => {
+                const level = coverage[category];
+                return (
+                  <div key={category} className="flex items-center justify-between gap-1.5 text-[12px]">
+                    <span className="truncate capitalize text-slate-600 dark:text-slate-400">{category}</span>
+                    <span
+                      className={`font-mono text-[11.5px] capitalize ${
+                        level === "high"
+                          ? "font-semibold text-emerald-600 dark:text-emerald-400"
+                          : level === "medium"
+                            ? "font-medium text-slate-700 dark:text-slate-300"
+                            : "text-slate-400 dark:text-slate-500"
+                      }`}
+                    >
+                      {level}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* 1. Extracted Startup Context & ICP */}
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/60 space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5">
-            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
-              Extracted Context
-            </span>
+        {/* 4. Extracted Startup Context */}
+        <section aria-labelledby="section-context" className="pt-3">
+          <div className="flex items-center justify-between pb-2">
+            <h3
+              id="section-context"
+              className="text-[12px] font-semibold text-slate-800 dark:text-slate-200"
+            >
+              Extracted context
+            </h3>
             {targetUrl && (
               <a
                 href={targetUrl.startsWith("http") ? targetUrl : `https://${targetUrl}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+                className="group inline-flex items-center gap-1 font-mono text-[11px] text-slate-500 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
                 title="Open startup website"
+                aria-label={`Open website for ${targetDomain || targetUrl}`}
               >
-                <span>{targetDomain || targetUrl}</span>
-                <ExternalLink className="size-3" />
+                <span className="max-w-[120px] truncate">{targetDomain || targetUrl}</span>
+                <ExternalLink className="size-2.5 shrink-0" />
               </a>
             )}
           </div>
 
           {identity ? (
-            <div className="space-y-2 text-[12px]">
+            <dl className="space-y-2 text-[12px]">
               <div>
-                <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">Startup Name</span>
-                <p className="font-bold text-slate-900 dark:text-white">{company}</p>
+                <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Startup</dt>
+                <dd className="font-semibold text-slate-900 dark:text-white">{company}</dd>
               </div>
 
               {identity.inferred_description && (
                 <div>
-                  <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">Value Proposition</span>
-                  <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-[12px]">
+                  <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Value Proposition</dt>
+                  <dd className="leading-relaxed text-slate-800 dark:text-slate-200">
                     {identity.inferred_description}
-                  </p>
+                  </dd>
                 </div>
               )}
 
               {identity.target_audience && (
                 <div>
-                  <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">Target ICP</span>
-                  <p className="text-slate-700 dark:text-slate-300">{identity.target_audience}</p>
+                  <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Target ICP</dt>
+                  <dd className="leading-relaxed text-slate-800 dark:text-slate-200">{identity.target_audience}</dd>
                 </div>
               )}
 
               {identity.primary_cta && (
                 <div>
-                  <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">Primary CTA</span>
-                  <p className="text-slate-900 dark:text-white font-medium">{identity.primary_cta}</p>
+                  <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Primary CTA</dt>
+                  <dd className="font-semibold text-slate-900 dark:text-white">{identity.primary_cta}</dd>
                 </div>
               )}
-            </div>
+            </dl>
           ) : isInvestigating ? (
-            <div className="space-y-2 py-1">
-              <div className="h-3 w-4/5 rounded bg-slate-100 dark:bg-slate-800 animate-pulse" />
-              <div className="h-3 w-3/5 rounded bg-slate-100 dark:bg-slate-800 animate-pulse" />
-              <div className="h-3 w-2/3 rounded bg-slate-100 dark:bg-slate-800 animate-pulse" />
+            <div className="space-y-2 py-1" aria-hidden="true">
+              <div className="h-3 w-4/5 rounded bg-slate-200/60 dark:bg-slate-800/60" />
+              <div className="h-3 w-3/5 rounded bg-slate-200/60 dark:bg-slate-800/60" />
+              <div className="h-3 w-2/3 rounded bg-slate-200/60 dark:bg-slate-800/60" />
             </div>
           ) : (
-            <p className="text-[12px] text-slate-400 dark:text-slate-600">Context will appear once investigation begins.</p>
+            <p className="text-[11.5px] text-slate-400 dark:text-slate-500">Context appears once investigation begins.</p>
           )}
-        </div>
+        </section>
 
-        {/* 2. Seven-Pillar Evaluation Tasks */}
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/60 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
-              Evaluation Process
-            </span>
-            <span className="text-[10px] font-bold font-mono text-slate-400">7 PILLARS</span>
+        {/* 5. Seven-Pillar Evaluation Framework */}
+        <section aria-labelledby="section-evaluation" className="pt-3">
+          <div className="flex items-center justify-between pb-2">
+            <h3
+              id="section-evaluation"
+              className="text-[12px] font-semibold text-slate-800 dark:text-slate-200"
+            >
+              Evaluation
+            </h3>
+            {isInvestigating && hasScoring && !hasReport ? (
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-orange-600 dark:text-orange-400">
+                <span className="size-1.5 rounded-full bg-orange-500 ring-2 ring-orange-500/20" />
+                Evaluating
+              </span>
+            ) : (
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">
+                7 pillars
+              </span>
+            )}
           </div>
 
-          <ol className="space-y-2">
+          <ol className="space-y-2 pt-0.5">
             {AUDIT_PILLARS.map((pillar) => {
               const isPillarDone = isComplete || hasReport;
-              const isPillarActive = isInvestigating && hasScoring && !hasReport;
 
               return (
-                <li
-                  key={pillar.key}
-                  className="flex items-start gap-2.5 text-[12.5px] rounded-xl p-2.5 bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800/50"
-                >
+                <li key={pillar.key} className="flex items-start gap-2 text-[12px]">
                   <span className="mt-0.5 shrink-0">
                     {isPillarDone ? (
-                      <span className="flex size-4 items-center justify-center rounded-full bg-slate-900 text-white dark:bg-white dark:text-slate-900">
-                        <Check className="size-2.5 stroke-[3]" />
+                      <span className="flex size-3.5 items-center justify-center rounded-full bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+                        <Check className="size-2 stroke-[3]" />
                       </span>
                     ) : (
-                      <Circle className={`size-4 ${isPillarActive ? "text-orange-500" : "text-slate-300 dark:text-slate-700"}`} />
+                      <Circle className="size-3.5 text-slate-300 dark:text-slate-700" />
                     )}
                   </span>
 
                   <div className="min-w-0 flex-1">
-                    <span className={`font-semibold block ${isPillarDone || isPillarActive ? "text-slate-900 dark:text-white" : "text-slate-400 dark:text-slate-600"}`}>
+                    <span
+                      className={`block font-medium ${
+                        isPillarDone
+                          ? "text-slate-900 dark:text-white"
+                          : "text-slate-700 dark:text-slate-300"
+                      }`}
+                    >
                       {pillar.title}
                     </span>
-                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
+                    <p className="leading-snug text-[11.5px] text-slate-500 dark:text-slate-400">
                       {pillar.desc}
                     </p>
                   </div>
@@ -387,7 +436,7 @@ export function ContextualPanel({
               );
             })}
           </ol>
-        </div>
+        </section>
       </div>
     </aside>
   );
