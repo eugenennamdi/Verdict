@@ -13,6 +13,10 @@ import { readInvestigateStream } from "./sse";
 import type { AuditSummary, RecentInvestigation, WorkspaceMessage, WorkspacePhase } from "./types";
 import { conversationalAuditSummary } from "./investigationPresentation";
 import type { PublicAuditQaMetadata } from "@/lib/conversation/auditAnswer";
+import {
+  humanAuditQuotaLabel,
+  type HumanAuditQuotaState,
+} from "@/lib/humanAuditQuotaContract";
 
 const RECENTS_KEY = "verdict_recent_investigations";
 
@@ -59,6 +63,8 @@ export function VerdictWorkspace() {
   const [activeScore, setActiveScore] = useState<number | undefined>();
   const [activeResult, setActiveResult] = useState<AuditSummary | undefined>();
   const [startTime, setStartTime] = useState<number | null>(null);
+  const [humanAuditQuota, setHumanAuditQuota] =
+    useState<HumanAuditQuotaState | null>(null);
 
   // Layout states
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -93,6 +99,22 @@ export function VerdictWorkspace() {
     } catch {
       // ignore
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/usage", { method: "GET" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json()) as HumanAuditQuotaState;
+      })
+      .then((quota) => {
+        if (!cancelled && quota) setHumanAuditQuota(quota);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Auto-scroll message stream
@@ -243,14 +265,21 @@ export function VerdictWorkspace() {
 
       if (response.status === 429) {
         let retryAfterSeconds: number | undefined;
+        let message: string | undefined;
         try {
-          const payload = await response.json();
+          const payload = (await response.json()) as {
+            message?: string;
+            retryAfterSeconds?: number;
+            quota?: HumanAuditQuotaState;
+          };
           retryAfterSeconds = payload.retryAfterSeconds;
+          message = payload.message;
+          if (payload.quota) setHumanAuditQuota(payload.quota);
         } catch {
           retryAfterSeconds = undefined;
         }
         setPhase(hasCompletedAudit ? "complete" : "idle");
-        reply(rateLimitReply(retryAfterSeconds));
+        reply(message || rateLimitReply(retryAfterSeconds));
         return;
       }
 
@@ -279,6 +308,9 @@ export function VerdictWorkspace() {
           setActiveCompany(company);
           setActiveScore(result.overallScore);
           setActiveResult(result);
+          if (result.humanAuditQuota) {
+            setHumanAuditQuota(result.humanAuditQuota);
+          }
 
           const traceMsg: WorkspaceMessage = {
             id: nextId(),
@@ -417,7 +449,10 @@ export function VerdictWorkspace() {
         message?: string;
         url?: string | null;
         auditQa?: PublicAuditQaMetadata;
+        quota?: HumanAuditQuotaState;
       } | null;
+
+      if (payload?.quota) setHumanAuditQuota(payload.quota);
 
       if (payload?.action === "start_audit" && payload.url) {
         posthog?.capture("audit_intent", { source: "conversation" });
@@ -492,6 +527,11 @@ export function VerdictWorkspace() {
                     investigating={busy}
                     placeholder="Enter a startup URL (e.g. linear.app, stripe.com) or ask anything..."
                   />
+                  {humanAuditQuota ? (
+                    <p className="mt-2 px-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                      {humanAuditQuotaLabel(humanAuditQuota)}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -535,6 +575,11 @@ export function VerdictWorkspace() {
                           : "Ask Verdict or paste another URL..."
                     }
                   />
+                  {humanAuditQuota ? (
+                    <p className="mt-2 px-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                      {humanAuditQuotaLabel(humanAuditQuota)}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>

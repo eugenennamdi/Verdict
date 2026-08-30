@@ -94,8 +94,8 @@ export const FALLBACK_REPLY =
 
 export function rateLimitReply(retryAfterSeconds?: number): string {
   if (retryAfterSeconds && retryAfterSeconds > 0) {
-    const hours = Math.max(1, Math.ceil(retryAfterSeconds / 3600));
-    return `You've used this period's free investigation. The limit is one audit every 12 hours. Try again in about ${hours} hour${hours === 1 ? "" : "s"}.`;
+    const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+    return `There have been too many audit attempts in a short period. Please try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`;
   }
-  return `You've used this period's free investigation. The limit is one audit every 12 hours. Please try again later.`;
+  return "There have been too many audit attempts in a short period. Please try again shortly.";
 }

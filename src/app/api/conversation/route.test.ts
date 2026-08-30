@@ -181,6 +181,86 @@ describe("POST /api/conversation grounded audit routing", () => {
     });
   });
 
+  it("blocks a new audit action when the visitor has used all free audits", async () => {
+    const complete = vi.fn(async () => ({
+      content: null,
+      toolCalls: [
+        {
+          name: "start_startup_audit",
+          arguments: JSON.stringify({ url: "https://stripe.com" }),
+        },
+      ],
+    }));
+    const getNewAuditQuota = vi.fn(async () => ({
+      quota: {
+        limit: 3,
+        used: 3,
+        remaining: 0,
+        nextAvailableAt: "2026-08-04T10:00:00.000Z",
+      },
+    }));
+    const handler = createConversationHandler({ complete, getNewAuditQuota });
+
+    const response = await handler(
+      request({
+        messages: [
+          { role: "user", content: "Audit https://stripe.com" },
+        ],
+      })
+    );
+    const payload = await response.json();
+
+    expect(payload).toMatchObject({
+      action: "quota_exhausted",
+      url: null,
+      quota: { used: 3, remaining: 0 },
+    });
+  });
+
+  it("allows audit follow-up Q&A when the visitor is at 3/3", async () => {
+    const loaded = makeLoadedAuditContext();
+    const getNewAuditQuota = vi.fn();
+    const answerGrounded = vi.fn(async () => ({
+      answer: "Conversion is constrained by the pricing evidence. [S2]",
+      citations: ["S2" as const],
+      answerType: "score_explanation" as const,
+      confidence: "high" as const,
+      limitations: [],
+    }));
+    const handler = createConversationHandler({
+      loadContext: async () => loaded,
+      answerGrounded,
+      getNewAuditQuota,
+    });
+
+    const response = await handler(
+      request({
+        messages: [{ role: "user", content: "Why did Conversion score 60?" }],
+        activeReportId: REPORT_ID,
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(answerGrounded).toHaveBeenCalledOnce();
+    expect(getNewAuditQuota).not.toHaveBeenCalled();
+  });
+
+  it("allows general conversation when the visitor is at 3/3", async () => {
+    const complete = vi.fn(async () => ({
+      content: "I can explain the audit framework.",
+      toolCalls: [],
+    }));
+    const getNewAuditQuota = vi.fn();
+    const handler = createConversationHandler({ complete, getNewAuditQuota });
+
+    const response = await handler(
+      request({ messages: [{ role: "user", content: "What can you do?" }] })
+    );
+
+    expect(await response.json()).toMatchObject({ action: "respond" });
+    expect(getNewAuditQuota).not.toHaveBeenCalled();
+  });
+
   it("handles a missing active report without either model", async () => {
     const complete = vi.fn();
     const answerGrounded = vi.fn();

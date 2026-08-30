@@ -22,6 +22,16 @@ import {
   type DeepSeekCompletion,
   type ChatTurn,
 } from "@/lib/conversation/deepseek";
+import {
+  attachAnonymousVisitorCookie,
+  resolveAnonymousAuditVisitor,
+  type AnonymousAuditVisitor,
+} from "@/lib/humanAuditIdentity";
+import { getHumanAuditQuota } from "@/lib/humanAuditQuota";
+import {
+  humanAuditQuotaExhaustedMessage,
+  type HumanAuditQuotaState,
+} from "@/lib/humanAuditQuotaContract";
 import { redis } from "@/lib/redis";
 
 const MAX_MESSAGES = 10;
@@ -184,7 +194,20 @@ type ConversationDependencies = {
   loadContext?: (reportId: string) => Promise<LoadedAuditContext | null>;
   answerGrounded?: typeof answerGroundedAuditQuestion;
   qaGenerator?: AuditQaGenerator;
+  getNewAuditQuota?: (request: Request) => Promise<{
+    quota: HumanAuditQuotaState;
+    visitor?: AnonymousAuditVisitor;
+  }>;
 };
+
+function withOptionalVisitorCookie(
+  response: NextResponse,
+  visitor?: AnonymousAuditVisitor
+): NextResponse {
+  return visitor
+    ? attachAnonymousVisitorCookie(response, visitor)
+    : response;
+}
 
 export function createConversationHandler(
   dependencies: ConversationDependencies = {}
@@ -313,12 +336,39 @@ export function createConversationHandler(
         },
         ...history,
       ]);
-      return NextResponse.json(
-        resolveModelTurn({
-          content: completion.content,
-          toolCalls: completion.toolCalls,
-        })
-      );
+      const action = resolveModelTurn({
+        content: completion.content,
+        toolCalls: completion.toolCalls,
+      });
+      if (action.action !== "start_audit" || !dependencies.getNewAuditQuota) {
+        return NextResponse.json(action);
+      }
+
+      try {
+        const access = await dependencies.getNewAuditQuota(req);
+        if (access.quota.remaining === 0) {
+          return withOptionalVisitorCookie(
+            NextResponse.json({
+              action: "quota_exhausted",
+              message: humanAuditQuotaExhaustedMessage(access.quota),
+              url: null,
+              quota: access.quota,
+            }),
+            access.visitor
+          );
+        }
+        return withOptionalVisitorCookie(
+          NextResponse.json({ ...action, quota: access.quota }),
+          access.visitor
+        );
+      } catch {
+        return NextResponse.json({
+          action: "respond",
+          message:
+            "I couldn't verify free-audit availability just now. Please try again shortly.",
+          url: null,
+        });
+      }
     } catch {
       return NextResponse.json({
         action: "respond",
@@ -329,7 +379,13 @@ export function createConversationHandler(
   };
 }
 
-const conversationHandler = createConversationHandler();
+const conversationHandler = createConversationHandler({
+  getNewAuditQuota: async (request) => {
+    const visitor = resolveAnonymousAuditVisitor(request);
+    const quota = await getHumanAuditQuota(visitor.quotaIdentity);
+    return { quota, visitor };
+  },
+});
 
 export async function POST(req: Request) {
   const ip = clientIp(req);
