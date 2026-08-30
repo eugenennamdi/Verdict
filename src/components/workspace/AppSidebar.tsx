@@ -131,7 +131,7 @@ export function AppSidebar({
 
   const content = (
     <aside
-      className={`flex h-full flex-col justify-between border-r border-slate-200/80 bg-slate-50/50 dark:border-slate-800/80 dark:bg-slate-950/80 backdrop-blur-md transition-all duration-200 ease-out ${
+      className={`flex h-full flex-col justify-between border-r border-slate-200/80 bg-slate-50/50 dark:border-slate-800/80 dark:bg-slate-950/80 backdrop-blur-md transition-[width] duration-200 ease-out ${
         isCollapsed ? "w-[60px]" : "w-64"
       }`}
     >
@@ -146,7 +146,7 @@ export function AppSidebar({
               className="group flex cursor-pointer items-center gap-2 text-left outline-none"
               title="Verdict"
             >
-              <VerdictLogo className="h-5 w-5 text-orange-500 transition-transform duration-200 group-hover:scale-105" />
+              <VerdictLogo className="h-5 w-5 text-orange-500" />
               <span className="text-[14px] font-black tracking-tight text-slate-900 dark:text-white">
                 VERDICT
               </span>
@@ -167,7 +167,7 @@ export function AppSidebar({
                 <button
                   type="button"
                   onClick={onMobileClose}
-                  className="sm:hidden inline-flex size-8 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800"
+                  className="sm:hidden inline-flex size-8 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors"
                   aria-label="Close navigation"
                 >
                   <X className="size-4" />
@@ -197,10 +197,10 @@ export function AppSidebar({
               onNewInvestigation();
               if (onMobileClose) onMobileClose();
             }}
-            className="group flex w-full items-center gap-3 rounded-xl bg-slate-200/60 px-3.5 py-2.5 text-[13.5px] font-semibold text-slate-900 shadow-2xs transition-all hover:bg-slate-200 dark:bg-slate-800/90 dark:text-white dark:hover:bg-slate-700/80 active:scale-[0.99]"
+            className="group flex w-full items-center gap-2.5 rounded-xl bg-slate-200/70 px-3.5 py-2.5 text-[13.5px] font-semibold text-slate-900 shadow-2xs transition-[background-color,color,transform] duration-150 ease-out hover:bg-slate-200 dark:bg-slate-800/90 dark:text-white dark:hover:bg-slate-700/80 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950/20 dark:focus-visible:ring-white/20"
             title="New Audit"
           >
-            <Plus className="size-4 text-slate-700 dark:text-slate-300 group-hover:text-orange-500 transition-colors" strokeWidth={2.5} />
+            <Plus className="size-4 text-slate-700 dark:text-slate-300" strokeWidth={2.5} />
             <span>New Audit</span>
           </button>
         ) : (
@@ -211,7 +211,7 @@ export function AppSidebar({
                 onNewInvestigation();
                 if (onMobileClose) onMobileClose();
               }}
-              className="flex size-9 items-center justify-center rounded-xl bg-slate-200/60 text-slate-900 shadow-2xs transition-all hover:bg-slate-200 dark:bg-slate-800/90 dark:text-white dark:hover:bg-slate-700/80 active:scale-95"
+              className="flex size-9 items-center justify-center rounded-xl bg-slate-200/70 text-slate-900 shadow-2xs transition-[background-color,color,transform] duration-150 ease-out hover:bg-slate-200 dark:bg-slate-800/90 dark:text-white dark:hover:bg-slate-700/80 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950/20 dark:focus-visible:ring-white/20"
               title="New Audit"
             >
               <Plus className="size-4.5 text-slate-800 dark:text-slate-200" strokeWidth={2.5} />
@@ -240,7 +240,7 @@ export function AppSidebar({
                 return (
                   <div
                     key={item.id}
-                    className={`group relative flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left transition-all ${
+                    className={`group relative flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left transition-colors duration-150 ${
                       isActive
                         ? "bg-slate-200/70 dark:bg-slate-800/90 text-slate-900 dark:text-white font-medium"
                         : "text-slate-700 dark:text-slate-300 hover:bg-slate-100/70 dark:hover:bg-slate-900/60"
@@ -274,7 +274,7 @@ export function AppSidebar({
                           e.stopPropagation();
                           onRemoveRecent(item.id);
                         }}
-                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 dark:text-slate-500 transition-opacity"
+                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 dark:text-slate-500 transition-opacity duration-150"
                         title="Remove from recents"
                         aria-label="Remove audit"
                       >
@@ -294,7 +294,7 @@ export function AppSidebar({
               key={item.id}
               type="button"
               onClick={() => onSelectRecent(item)}
-              className="flex size-9 items-center justify-center rounded-xl border border-slate-200/80 bg-white p-1 shadow-2xs hover:border-orange-500/50 hover:scale-105 dark:border-slate-800 dark:bg-slate-900 transition-all group"
+              className="flex size-9 items-center justify-center rounded-xl border border-slate-200/80 bg-white p-1 shadow-2xs hover:border-slate-400 dark:hover:border-slate-600 dark:border-slate-800 dark:bg-slate-900 transition-colors duration-150 group"
               title={item.companyName || item.domain}
             >
               <CompanyLogo domain={item.domain} name={item.companyName} className="size-5.5 rounded-md" />
@@ -320,7 +320,7 @@ export function AppSidebar({
               className="group flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-200/50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-white"
               title="For Agents (API & SDK)"
             >
-              <Bot className="size-4 shrink-0 text-slate-500 group-hover:text-orange-500 dark:text-slate-400" />
+              <Bot className="size-4 shrink-0 text-slate-500 dark:text-slate-400" />
               <span>For Agents</span>
             </Link>
 
@@ -330,7 +330,7 @@ export function AppSidebar({
               className="group flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-200/50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-white"
               title="Documentation"
             >
-              <BookOpen className="size-4 shrink-0 text-slate-500 group-hover:text-orange-500 dark:text-slate-400" />
+              <BookOpen className="size-4 shrink-0 text-slate-500 dark:text-slate-400" />
               <span>Documentation</span>
             </Link>
           </div>

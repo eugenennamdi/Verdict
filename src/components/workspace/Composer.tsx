@@ -19,10 +19,11 @@ export function Composer({
   onSubmit,
   disabled,
   investigating,
-  placeholder = "Ask Verdict anything or paste a startup URL...",
+  placeholder = "Enter a startup URL (e.g. linear.app, resend.com)…",
   targetDomain,
 }: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const canSubmit = !disabled && !investigating && Boolean(value.trim());
 
   // Auto-resize textarea
   useEffect(() => {
@@ -33,13 +34,12 @@ export function Composer({
   }, [value]);
 
   const submit = () => {
-    if (disabled || investigating || !value.trim()) return;
+    if (!canSubmit) return;
     onSubmit();
   };
 
   return (
-    <div className="relative w-full rounded-2xl border border-slate-200/90 bg-white shadow-2xs transition-all duration-150 focus-within:border-slate-400 dark:border-slate-800/90 dark:bg-slate-900/90 dark:focus-within:border-slate-600">
-
+    <div className="relative w-full rounded-2xl border border-slate-200/90 bg-white shadow-2xs transition-[border-color,box-shadow] duration-150 ease-out focus-within:border-slate-400 focus-within:ring-2 focus-within:ring-slate-900/5 dark:border-slate-800/90 dark:bg-slate-900/90 dark:focus-within:border-slate-600 dark:focus-within:ring-white/5">
       <div className="relative flex items-end">
         <label htmlFor="verdict-composer" className="sr-only">
           Message Verdict
@@ -65,9 +65,16 @@ export function Composer({
           <button
             type="button"
             onClick={submit}
-            disabled={disabled || investigating || !value.trim()}
+            disabled={!canSubmit}
+            aria-disabled={!canSubmit}
             aria-label={investigating ? "Investigation in progress" : "Send message"}
-            className="inline-flex size-8 items-center justify-center rounded-xl bg-orange-500 text-white shadow-xs transition-all duration-150 hover:bg-orange-600 active:scale-[0.96] disabled:pointer-events-none disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-600"
+            className={`inline-flex size-8 items-center justify-center rounded-xl transition-[background-color,color,transform] duration-150 ease-out ${
+              investigating
+                ? "bg-slate-100 text-slate-400 dark:bg-slate-800/90 dark:text-slate-500 cursor-wait"
+                : canSubmit
+                  ? "bg-orange-500 text-white shadow-xs hover:bg-orange-600 active:scale-[0.97] cursor-pointer"
+                  : "bg-slate-100 text-slate-400 dark:bg-slate-800/90 dark:text-slate-500 cursor-not-allowed pointer-events-none"
+            }`}
           >
             {investigating ? (
               <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />

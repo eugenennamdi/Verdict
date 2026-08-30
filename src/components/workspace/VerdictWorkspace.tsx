@@ -519,25 +519,25 @@ export function VerdictWorkspace() {
         <div className="relative flex min-h-0 flex-1 flex-col">
           {idle ? (
             /* Idle Screen: Focused, Software waiting for work */
-            <div className="flex flex-1 flex-col items-center justify-center px-4 pb-12 pt-6">
+            <div className="flex flex-1 flex-col items-center justify-start px-4 pt-[10vh] pb-16 sm:pt-[14vh]">
               <div className="w-full max-w-xl text-center">
                 <div className="mx-auto flex items-center justify-center">
-                  <VerdictLogo className="size-9 text-orange-500" />
+                  <VerdictLogo className="size-8 text-orange-500" />
                 </div>
-                <h1 className="mt-5 text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white">
-                  What startup are we auditing today?
+                <h1 className="mt-4 text-3xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-4xl">
+                  Audit a startup&apos;s growth readiness
                 </h1>
-                <p className="mx-auto mt-3 max-w-md text-[14.5px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  Paste any startup URL to run a 60-second growth due diligence audit across 7 pillars.
+                <p className="mx-auto mt-2.5 max-w-lg text-[15px] leading-relaxed text-slate-600 dark:text-slate-400">
+                  Verdict investigates public pages across 7 growth dimensions to produce an evidence-backed audit.
                 </p>
 
-                <div className="mt-7 text-left">
+                <div className="mt-6 text-left">
                   <Composer
                     value={draft}
                     onChange={setDraft}
                     onSubmit={() => handleSend(draft)}
                     investigating={busy}
-                    placeholder="Enter a startup URL (e.g. linear.app, stripe.com) or ask anything..."
+                    placeholder="Enter a startup URL (e.g. linear.app, resend.com)…"
                   />
                 </div>
               </div>
@@ -576,10 +576,10 @@ export function VerdictWorkspace() {
                     targetDomain={activeDomain}
                     placeholder={
                       investigating
-                        ? "Investigation in progress..."
+                        ? "Investigation in progress…"
                         : conversing
-                          ? "Verdict is responding..."
-                          : "Ask Verdict or paste another URL..."
+                          ? "Verdict is reviewing evidence…"
+                          : "Ask Verdict a question about this audit…"
                     }
                   />
                 </div>

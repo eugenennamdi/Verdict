@@ -151,15 +151,6 @@
 }
 
 @layer utilities {
-  .bg-mesh {
-    background-image: 
-      radial-gradient(ellipse at 40% 0%, hsla(28,100%,60%,0.2) 0%, transparent 70%),
-      radial-gradient(ellipse at 80% 10%, hsla(189,100%,56%,0.15) 0%, transparent 60%),
-      radial-gradient(ellipse at 0% 40%, hsla(355,100%,70%,0.15) 0%, transparent 70%),
-      radial-gradient(ellipse at 60% 60%, hsla(45,100%,60%,0.1) 0%, transparent 60%);
-    z-index: -1;
-  }
-
   .glass-panel {
     @apply bg-white/80 dark:bg-slate-900/40 backdrop-blur-sm border border-slate-200 dark:border-slate-800/30;
   }

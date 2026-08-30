@@ -146,6 +146,24 @@ export function HumanAuditPaywallDialog({
               ? "Confirming Payment"
               : "Pay $0.50 USDC";
 
+  const title =
+    ready
+      ? "Audit ready"
+      : busy
+        ? "Confirming payment"
+        : "You've used your free audits";
+
+  const description =
+    ready
+      ? "Your payment is confirmed. You can now start the investigation."
+      : busy
+        ? `Authorizing $0.50 USDC payment on ${humanPaymentChain.name}. Check your wallet to approve the transaction.`
+        : !connected
+          ? "Run another complete Verdict audit for $0.50 USDC. Connect your wallet to continue."
+          : !correctNetwork
+            ? `Switch your wallet to ${humanPaymentChain.name} to complete the $0.50 USDC payment.`
+            : `Run another complete Verdict audit for $0.50 USDC on ${humanPaymentChain.name}.`;
+
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       <button
@@ -165,27 +183,26 @@ export function HumanAuditPaywallDialog({
           type="button"
           onClick={onClose}
           disabled={busy}
-          className="absolute right-3 top-3 inline-flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40 dark:hover:bg-slate-900 dark:hover:text-slate-200"
+          className="absolute right-3 top-3 inline-flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40 dark:hover:bg-slate-900 dark:hover:text-slate-200"
           aria-label="Close"
         >
           <X className="size-4" />
         </button>
 
-        <div className="flex size-9 items-center justify-center rounded-xl bg-orange-50 text-orange-600 dark:bg-orange-950/35 dark:text-orange-400">
+        <div className="flex size-9 items-center justify-center rounded-xl bg-orange-500/10 text-orange-600 dark:bg-orange-500/15 dark:text-orange-400">
           <CreditCard className="size-4.5" />
         </div>
         <h2
           id="audit-payment-title"
           className="mt-4 text-lg font-bold tracking-tight text-slate-950 dark:text-white"
         >
-          Your free audits are used
+          {title}
         </h2>
         <p
           id="audit-payment-description"
           className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400"
         >
-          Run one more complete Verdict audit for $0.50 USDC. Connect your wallet
-          to continue.
+          {description}
         </p>
 
         <div className="mt-4 rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/60">
@@ -223,7 +240,7 @@ export function HumanAuditPaywallDialog({
           autoFocus
           disabled={busy || switchingNetwork || (action === "pay" && !walletClient)}
           onClick={act}
-          className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 text-[13px] font-bold text-white shadow-xs transition-colors hover:bg-orange-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 focus-visible:ring-offset-2 disabled:opacity-55"
+          className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 text-[13px] font-bold text-white shadow-xs transition-colors duration-150 hover:bg-orange-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 focus-visible:ring-offset-2 active:scale-[0.98] disabled:opacity-55"
         >
           {busy || switchingNetwork ? (
             <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
