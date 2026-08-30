@@ -6,6 +6,7 @@ export const AUDIT_THINKING_LEVELS = Object.freeze({
   normalization: ThinkingLevel.LOW,
   planner: ThinkingLevel.LOW,
   grader: ThinkingLevel.MEDIUM,
+  qa: ThinkingLevel.MEDIUM,
 });
 
 export type AuditModelTask = keyof typeof AUDIT_THINKING_LEVELS;

@@ -38,9 +38,9 @@ describe("classifyIntent", () => {
     expect(classifyIntent("audit my startup").type).toBe("audit_missing_url");
   });
 
-  it("blocks free-form follow-ups after a completed audit", () => {
+  it("recognizes free-form follow-ups after a completed audit", () => {
     expect(classifyIntent("why was conversion 68?", { hasCompletedAudit: true }).type).toBe(
-      "followup_blocked"
+      "audit_followup"
     );
     expect(classifyIntent("https://stripe.com", { hasCompletedAudit: true }).type).toBe(
       "audit"

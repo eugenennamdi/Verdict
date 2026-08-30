@@ -12,6 +12,7 @@ import { ContextualPanel } from "./ContextualPanel";
 import { readInvestigateStream } from "./sse";
 import type { AuditSummary, RecentInvestigation, WorkspaceMessage, WorkspacePhase } from "./types";
 import { conversationalAuditSummary } from "./investigationPresentation";
+import type { PublicAuditQaMetadata } from "@/lib/conversation/auditAnswer";
 
 const RECENTS_KEY = "verdict_recent_investigations";
 
@@ -205,8 +206,14 @@ export function VerdictWorkspace() {
     setMessages((current) => [...current, message]);
   };
 
-  const reply = (content: string) => {
-    push({ id: nextId(), role: "verdict", kind: "text", content });
+  const reply = (content: string, auditQa?: PublicAuditQaMetadata) => {
+    push({
+      id: nextId(),
+      role: "verdict",
+      kind: "text",
+      content,
+      ...(auditQa ? { auditQa } : {}),
+    });
   };
 
   const runInvestigation = async (url: string) => {
@@ -391,6 +398,17 @@ export function VerdictWorkspace() {
         body: JSON.stringify({
           messages: history,
           activeReportId,
+          knownAudits: recents.flatMap((item) =>
+            item.reportId
+              ? [
+                  {
+                    reportId: item.reportId,
+                    companyName: item.companyName,
+                    domain: item.domain,
+                  },
+                ]
+              : []
+          ),
         }),
       });
 
@@ -398,6 +416,7 @@ export function VerdictWorkspace() {
         action?: string;
         message?: string;
         url?: string | null;
+        auditQa?: PublicAuditQaMetadata;
       } | null;
 
       if (payload?.action === "start_audit" && payload.url) {
@@ -407,7 +426,7 @@ export function VerdictWorkspace() {
         return;
       }
 
-      reply(payload?.message || FALLBACK_REPLY);
+      reply(payload?.message || FALLBACK_REPLY, payload?.auditQa);
     } catch {
       reply(FALLBACK_REPLY);
     } finally {

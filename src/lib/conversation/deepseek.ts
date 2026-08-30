@@ -36,7 +36,7 @@ export type DeepSeekCompletion = {
 
 export function buildVerdictSystemPrompt(activeReportId?: string): string {
   const reportLine = activeReportId
-    ? `A report was just produced at /report/${activeReportId}. You may mention it. Do not invent scores, pillar numbers, or page evidence. For details, point the user to that report.`
+    ? `A report is active at /report/${activeReportId}. Audit-specific questions are handled by a separate grounded service before they reach you. Do not invent scores, pillar numbers, or page evidence.`
     : "No audit is in progress unless the user provides a URL.";
 
   return `You are Verdict, an autonomous growth investigator for startups.

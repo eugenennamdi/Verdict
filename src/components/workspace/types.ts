@@ -6,6 +6,7 @@ import type {
 } from "@/lib/audit/evidence";
 import type { EvidenceBudgetUsage } from "@/lib/audit/evidenceTrace";
 import type { EvidenceGatherStopReason } from "@/lib/audit/gather";
+import type { PublicAuditQaMetadata } from "@/lib/conversation/auditAnswer";
 
 export type PillarScore = {
   score?: number;
@@ -61,7 +62,13 @@ export type RecentInvestigation = {
 
 export type WorkspaceMessage =
   | { id: string; role: "user"; kind: "text"; content: string }
-  | { id: string; role: "verdict"; kind: "text"; content: string }
+  | {
+      id: string;
+      role: "verdict";
+      kind: "text";
+      content: string;
+      auditQa?: PublicAuditQaMetadata;
+    }
   | { id: string; role: "verdict"; kind: "trace"; events: ActivityEvent[]; domain?: string }
   | { id: string; role: "verdict"; kind: "result"; summary: string; result: AuditSummary; domain?: string }
   | { id: string; role: "verdict"; kind: "error"; message: string; domain?: string };

@@ -13,6 +13,7 @@ describe("Gemini audit model configuration", () => {
       normalization: ThinkingLevel.LOW,
       planner: ThinkingLevel.LOW,
       grader: ThinkingLevel.MEDIUM,
+      qa: ThinkingLevel.MEDIUM,
     });
   });
 
