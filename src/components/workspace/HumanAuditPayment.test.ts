@@ -26,7 +26,7 @@ describe("human audit payment presentation", () => {
       })
     );
     expect(html).toContain("Pay $0.50 USDC");
-    expect(html).toContain("Base network");
+    expect(html).toContain("Base Sepolia / testnet");
     expect(html).toContain("One audit entitlement");
 
     const freeHtml = renderToStaticMarkup(

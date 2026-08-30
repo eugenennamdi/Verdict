@@ -15,10 +15,13 @@ type HumanAuditPaymentProps = {
   onUsage: (usage: HumanAuditUsageState) => void;
 };
 
+const PAYMENT_NETWORK_COPY =
+  process.env.NODE_ENV === "production" ? "Base Mainnet" : "Base Sepolia / testnet";
+
 const STATUS_COPY: Record<HumanAuditPaymentStatus, string> = {
   idle: "Pay once for one additional audit. No deposit or subscription.",
   connecting: "Connecting your wallet…",
-  wrong_network: "Switch your wallet to Base and try again.",
+  wrong_network: `Switch your wallet to ${PAYMENT_NETWORK_COPY} and try again.`,
   insufficient_balance: "This wallet does not have enough USDC for the payment.",
   awaiting_signature: "Review the $0.50 USDC authorization in your wallet.",
   processing: "Confirming the payment…",
@@ -49,7 +52,7 @@ export function HumanAuditPayment({
 
   const purchase = async () => {
     const confirmed = window.confirm(
-      "Authorize a $0.50 USDC payment on Base for one additional Verdict audit?"
+      `Authorize a $0.50 USDC payment on ${PAYMENT_NETWORK_COPY} for one additional Verdict audit?`
     );
     if (!confirmed) {
       setStatus("declined");
@@ -95,7 +98,7 @@ export function HumanAuditPayment({
       </div>
       {!ready ? (
         <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">
-          Base network · User-controlled wallet · One audit entitlement
+          {PAYMENT_NETWORK_COPY} · User-controlled wallet · One audit entitlement
         </p>
       ) : null}
     </div>
