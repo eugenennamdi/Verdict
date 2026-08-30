@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ThinkingLevel } from "@google/genai";
 import {
+  AttemptLocalModelProviderError,
   AUDIT_MODEL,
   AUDIT_THINKING_LEVELS,
   DEEPSEEK_FLASH_AUDIT_MODEL,
@@ -8,6 +9,7 @@ import {
   FALLBACK_AUDIT_MODEL,
   PRIMARY_AUDIT_MODEL,
   TransientModelProviderError,
+  classifyAttemptLocalModelError,
   classifyTransientModelError,
   createAuditGenerationConfig,
 } from "./model";
@@ -69,5 +71,22 @@ describe("audit model contracts", () => {
       expect(classifyTransientModelError({ status })).toBeNull();
     }
     expect(classifyTransientModelError(new TypeError("Developer bug"))).toBeNull();
+  });
+
+  it("centralizes fallback-eligible provider output failures", () => {
+    for (const category of [
+      "incomplete_max_output_tokens",
+      "incomplete_other",
+      "missing_output",
+      "malformed_json",
+      "unexpected_response_status",
+      "invalid_structured_output",
+    ] as const) {
+      expect(
+        classifyAttemptLocalModelError(
+          new AttemptLocalModelProviderError(category)
+        )
+      ).toBe(category);
+    }
   });
 });

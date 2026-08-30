@@ -25,6 +25,30 @@ export type ModelAvailabilityErrorCategory =
   | "timeout"
   | "transport";
 
+export type ModelAttemptLocalFailureCategory =
+  | ModelAvailabilityErrorCategory
+  | "provider_unavailable"
+  | "provider_timeout"
+  | "incomplete_max_output_tokens"
+  | "incomplete_other"
+  | "missing_output"
+  | "malformed_json"
+  | "unexpected_response_status"
+  | "invalid_structured_output";
+
+export type ModelFinishReason =
+  | "stop"
+  | "length"
+  | "content_filter"
+  | "tool_calls"
+  | "insufficient_system_resource"
+  | "other";
+
+export type ModelAttemptTelemetry = {
+  httpStatus?: number;
+  finishReason?: ModelFinishReason;
+};
+
 /** Backwards-compatible type name for existing route and test consumers. */
 export type GeminiAvailabilityErrorCategory = ModelAvailabilityErrorCategory;
 
@@ -68,6 +92,16 @@ export class ModelAvailabilityError extends Error {
   }
 }
 
+export class ModelProviderExhaustedError extends Error {
+  readonly category: ModelAttemptLocalFailureCategory;
+
+  constructor(category: ModelAttemptLocalFailureCategory) {
+    super(MODEL_TEMPORARILY_UNAVAILABLE_CODE);
+    this.name = "ModelProviderExhaustedError";
+    this.category = category;
+  }
+}
+
 /** Retained for callers/tests that construct the former Google-only error. */
 export class GeminiAvailabilityError extends ModelAvailabilityError {
   constructor(category: ModelAvailabilityErrorCategory) {
@@ -76,32 +110,51 @@ export class GeminiAvailabilityError extends ModelAvailabilityError {
   }
 }
 
-export class TransientModelProviderError extends Error {
-  readonly category: ModelAvailabilityErrorCategory;
+export class AttemptLocalModelProviderError extends Error {
+  readonly category: ModelAttemptLocalFailureCategory;
+  readonly telemetry: ModelAttemptTelemetry;
 
-  constructor(category: ModelAvailabilityErrorCategory) {
+  constructor(
+    category: ModelAttemptLocalFailureCategory,
+    telemetry: ModelAttemptTelemetry = {}
+  ) {
     super(MODEL_TEMPORARILY_UNAVAILABLE_CODE);
-    this.name = "TransientModelProviderError";
+    this.name = "AttemptLocalModelProviderError";
     this.category = category;
+    this.telemetry = telemetry;
+  }
+}
+
+export class TransientModelProviderError extends AttemptLocalModelProviderError {
+  declare readonly category: ModelAvailabilityErrorCategory;
+
+  constructor(
+    category: ModelAvailabilityErrorCategory,
+    telemetry: ModelAttemptTelemetry = {}
+  ) {
+    super(category, telemetry);
+    this.name = "TransientModelProviderError";
   }
 }
 
 export class TerminalModelProviderError extends Error {
   readonly safeCategory:
-    | "authentication"
-    | "permission"
-    | "schema"
+    | "authentication_error"
+    | "permission_error"
+    | "invalid_request"
     | "content_safety"
-    | "invalid_response"
     | "application";
+  readonly telemetry: ModelAttemptTelemetry;
 
   constructor(
     safeCategory: TerminalModelProviderError["safeCategory"],
-    message = "MODEL_PROVIDER_TERMINAL_FAILURE"
+    message = "MODEL_PROVIDER_TERMINAL_FAILURE",
+    telemetry: ModelAttemptTelemetry = {}
   ) {
     super(message);
     this.name = "TerminalModelProviderError";
     this.safeCategory = safeCategory;
+    this.telemetry = telemetry;
   }
 }
 
@@ -198,6 +251,24 @@ export function classifyTransientModelError(
   return null;
 }
 
+export function classifyAttemptLocalModelError(
+  error: unknown
+): ModelAttemptLocalFailureCategory | null {
+  if (error instanceof AttemptLocalModelProviderError) return error.category;
+  return classifyTransientModelError(error);
+}
+
+export function modelAttemptTelemetry(error: unknown): ModelAttemptTelemetry {
+  if (
+    error instanceof AttemptLocalModelProviderError ||
+    error instanceof TerminalModelProviderError
+  ) {
+    return error.telemetry;
+  }
+  const status = numericStatus(error);
+  return status === undefined ? {} : { httpStatus: status };
+}
+
 export function classifyTransientGeminiAvailabilityError(
   error: unknown
 ): GeminiAvailabilityErrorCategory | null {
@@ -213,9 +284,11 @@ export function classifyTerminalModelError(
 ): TerminalModelProviderError["safeCategory"] {
   if (error instanceof TerminalModelProviderError) return error.safeCategory;
   const status = numericStatus(error);
-  if (status === 401) return "authentication";
-  if (status === 403) return "permission";
-  if (status === 400 || status === 422) return "schema";
+  if (status === 401) return "authentication_error";
+  if (status === 403) return "permission_error";
+  if ([400, 404, 405, 409, 422].includes(status ?? -1)) {
+    return "invalid_request";
+  }
   const message = error instanceof Error ? error.message : "";
   if (/safety|content.?filter|blocked content/i.test(message)) {
     return "content_safety";

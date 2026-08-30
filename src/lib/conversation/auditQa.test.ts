@@ -132,6 +132,37 @@ describe("grounded audit Q&A", () => {
     });
   });
 
+  it("falls through structurally invalid Q&A output before sanitization", async () => {
+    const loaded = makeLoadedAuditContext();
+    const generate = vi
+      .fn<AuditQaGenerator>()
+      .mockResolvedValueOnce('{"answer":"missing required fields"}')
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          answer: "Grounded answer from the next provider. [S2]",
+          citations: ["S2"],
+          answerType: "evidence",
+          confidence: "high",
+          limitations: [],
+        })
+      );
+
+    const answer = await answerGroundedAuditQuestion(
+      { question: "What supports the conclusion?", loaded },
+      { generate }
+    );
+
+    expect(generate.mock.calls.map(([request]) => request.model)).toEqual([
+      "gemini-3.7-flash",
+      "deepseek-v4-flash",
+    ]);
+    expect(answer.citations).toEqual(["S2"]);
+    expect(answer.modelProvenance).toMatchObject({
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+    });
+  });
+
   it("retains valid citations and strips invented model citations", () => {
     const loaded = makeLoadedAuditContext();
     const answer = sanitizeAuditQaResponse(

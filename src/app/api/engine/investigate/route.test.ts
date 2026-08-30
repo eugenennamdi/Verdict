@@ -4,7 +4,11 @@ vi.mock("server-only", () => ({}));
 
 import { createInvestigateHandler } from "./route";
 import type { HumanAuditAccessDecision } from "@/lib/humanAuditAccess";
-import { ModelAvailabilityError } from "@/lib/audit/model";
+import {
+  ModelAvailabilityError,
+  ModelProviderExhaustedError,
+  TerminalModelProviderError,
+} from "@/lib/audit/model";
 import { MODEL_TEMPORARILY_UNAVAILABLE_MESSAGE } from "@/lib/audit/publicError";
 
 const AVAILABLE = {
@@ -206,7 +210,34 @@ describe("POST /api/engine/investigate human quota", () => {
     );
   });
 
-  it("releases a paid entitlement reservation when all model tiers are unavailable", async () => {
+  it("releases free access and hides exhausted or terminal provider failures", async () => {
+    for (const failure of [
+      new ModelProviderExhaustedError("invalid_structured_output"),
+      new TerminalModelProviderError("invalid_request"),
+    ]) {
+      const dependencies = baseDependencies();
+      const handler = createInvestigateHandler({
+        ...dependencies,
+        runAudit: vi.fn(async () => {
+          throw failure;
+        }) as never,
+      });
+
+      const response = await handler(request({ url: "https://example.com" }));
+      const body = await response.text();
+
+      expect(dependencies.completeAccess).not.toHaveBeenCalled();
+      expect(dependencies.releaseAccess).toHaveBeenCalledWith(
+        "visitor-hash",
+        AVAILABLE.access
+      );
+      expect(AVAILABLE.usage.free).toMatchObject({ used: 0, remaining: 2 });
+      expect(body).toContain(MODEL_TEMPORARILY_UNAVAILABLE_MESSAGE);
+      expect(body).not.toMatch(/MODEL_PROVIDER|invalid_structured|deepseek|gemini/i);
+    }
+  });
+
+  it("releases a paid entitlement reservation when all model tiers fail", async () => {
     const dependencies = baseDependencies();
     const paidAccess = {
       allowed: true as const,
@@ -227,7 +258,7 @@ describe("POST /api/engine/investigate human quota", () => {
     const handler = createInvestigateHandler({
       ...dependencies,
       runAudit: vi.fn(async () => {
-        throw new ModelAvailabilityError("rate_limited");
+        throw new ModelProviderExhaustedError("malformed_json");
       }) as never,
     });
 
@@ -239,5 +270,7 @@ describe("POST /api/engine/investigate human quota", () => {
       "visitor-hash",
       paidAccess.access
     );
+    expect(paidAccess.usage.free.used).toBe(3);
+    expect(paidAccess.access.entitlement.entitlementId).toBe("entitlement-1");
   });
 });

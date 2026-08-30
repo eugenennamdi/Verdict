@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -39,11 +39,47 @@ const pillar = {
   weaknesses: [],
 };
 
+function validAuditPayload() {
+  return {
+    is_valid_startup: true,
+    invalid_reason: "",
+    company_name: "Example",
+    score_interpretation: "Average",
+    pillars: {
+      positioning: pillar,
+      messaging: pillar,
+      website_ux: pillar,
+      conversion: pillar,
+      trust: pillar,
+      competition: pillar,
+      growth_foundation: pillar,
+    },
+    the_verdict: {
+      status: "Average",
+      primary_constraint: "Trust",
+      highest_opportunity: "Proof",
+      estimated_impact: "Medium",
+    },
+    priority_matrix: [],
+    evidence_digests: [
+      {
+        sourceId: "S1",
+        keyFindings: ["Grounded"],
+        relevantSignals: ["cta_present"],
+      },
+    ],
+  };
+}
+
 describe("audit Gemini calls", () => {
   beforeEach(() => {
     process.env.DEEPSEEK_API_KEY = "test-key";
     mocks.generateContent.mockReset();
     vi.unstubAllGlobals();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   afterAll(() => {
@@ -174,40 +210,12 @@ describe("audit Gemini calls", () => {
       target_audience: "Teams",
       primary_cta: "Start",
     };
-    const auditPayload = {
-      is_valid_startup: true,
-      invalid_reason: "",
-      company_name: "Example",
-      score_interpretation: "Average",
-      pillars: {
-        positioning: pillar,
-        messaging: pillar,
-        website_ux: pillar,
-        conversion: pillar,
-        trust: pillar,
-        competition: pillar,
-        growth_foundation: pillar,
-      },
-      the_verdict: {
-        status: "Average",
-        primary_constraint: "Trust",
-        highest_opportunity: "Proof",
-        estimated_impact: "Medium",
-      },
-      priority_matrix: [],
-      evidence_digests: [
-        {
-          sourceId: "S1",
-          keyFindings: ["Grounded"],
-          relevantSignals: ["cta_present"],
-        },
-        {
-          sourceId: "S99",
-          keyFindings: ["Invented"],
-          relevantSignals: [],
-        },
-      ],
-    };
+    const auditPayload = validAuditPayload();
+    auditPayload.evidence_digests.push({
+      sourceId: "S99",
+      keyFindings: ["Invented"],
+      relevantSignals: [],
+    });
 
     mocks.generateContent.mockRejectedValue(availabilityError());
     const deepSeekBodies = [
@@ -220,12 +228,11 @@ describe("audit Gemini calls", () => {
       fetchMock.mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            status: "completed",
             model: "deepseek-v4-flash",
-            output: [
+            choices: [
               {
-                type: "message",
-                content: [{ type: "output_text", text: body }],
+                finish_reason: "stop",
+                message: { content: body },
               },
             ],
           }),
@@ -275,15 +282,76 @@ describe("audit Gemini calls", () => {
     ]);
   });
 
-  it("does not fail over when a successful primary response contains malformed JSON", async () => {
-    mocks.generateContent.mockResolvedValueOnce({ text: "not-json" });
+  it.each([
+    [
+      "incomplete output",
+      {
+        choices: [
+          { finish_reason: "length", message: { content: null } },
+        ],
+      },
+      "incomplete_max_output_tokens",
+    ],
+    [
+      "malformed JSON",
+      {
+        choices: [
+          { finish_reason: "stop", message: { content: "not-json" } },
+        ],
+      },
+      "malformed_json",
+    ],
+    [
+      "structurally invalid output",
+      {
+        choices: [
+          {
+            finish_reason: "stop",
+            message: { content: '{"is_valid_startup":true}' },
+          },
+        ],
+      },
+      "invalid_structured_output",
+    ],
+  ] as const)(
+    "uses Gemini 3.6 after DeepSeek returns %s",
+    async (_label, deepSeekPayload, safeCategory) => {
+      mocks.generateContent
+        .mockRejectedValueOnce(Object.assign(new Error("unavailable"), { status: 503 }))
+        .mockResolvedValueOnce({ text: JSON.stringify(validAuditPayload()) });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn<typeof fetch>().mockResolvedValue(
+          new Response(JSON.stringify(deepSeekPayload), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        )
+      );
+      const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
 
-    await expect(identifyFromMarkdown("Product homepage")).rejects.toThrow(
-      "failed to generate a valid analysis"
-    );
-    expect(mocks.generateContent).toHaveBeenCalledOnce();
-    expect(mocks.generateContent.mock.calls[0][0].model).toBe(
-      "gemini-3.7-flash"
-    );
-  });
+      const audit = await gradeFromMarkdown("https://example.com", "Evidence", {
+        sources: [
+          {
+            sourceId: "S1",
+            url: "https://example.com/",
+            path: "/",
+            role: "homepage",
+            category: "identity",
+            acquisitionMethod: "firecrawl",
+            chars: 80,
+          },
+        ],
+      });
+
+      expect(audit.overallScore).toBe(60);
+      expect(mocks.generateContent.mock.calls.map(([request]) => request.model)).toEqual([
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+      ]);
+      expect(info.mock.calls.map(([line]) => String(line)).join("\n")).toContain(
+        `\"safeCategory\":\"${safeCategory}\"`
+      );
+    }
+  );
 });

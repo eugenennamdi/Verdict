@@ -12,8 +12,19 @@ describe("InvestigationError", () => {
       })
     );
 
-    expect(html).toContain("The analysis service is temporarily busy");
+    expect(html).toContain("Your audit wasn&#x27;t counted");
     expect(html).not.toMatch(/MODEL_HIGH_DEMAND|gemini-3\.7-flash/i);
     expect(MODEL_TEMPORARILY_UNAVAILABLE_MESSAGE).not.toMatch(/gemini|google/i);
+  });
+
+  it("never renders an unknown internal-looking backend code", () => {
+    const html = renderToStaticMarkup(
+      createElement(InvestigationError, {
+        message: "MODEL_PROVIDER_TERMINAL_FAILURE",
+      })
+    );
+
+    expect(html).not.toContain("MODEL_PROVIDER_TERMINAL_FAILURE");
+    expect(html).toContain("Your audit wasn&#x27;t counted");
   });
 });

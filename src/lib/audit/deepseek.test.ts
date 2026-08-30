@@ -3,34 +3,60 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import {
+  DEEPSEEK_CHAT_COMPLETIONS_URL,
   DEEPSEEK_OUTPUT_TOKEN_LIMITS,
-  DEEPSEEK_REASONING_EFFORT,
-  DEEPSEEK_RESPONSES_URL,
+  DEEPSEEK_REASONING_POLICY,
   generateDeepSeekStructuredJson,
-  parseDeepSeekResponsePayload,
+  parseDeepSeekChatCompletionPayload,
   toDeepSeekJsonSchema,
 } from "./deepseek";
+import type { AuditModelTask } from "./model";
 
 const originalApiKey = process.env.DEEPSEEK_API_KEY;
+const schema = {
+  type: "OBJECT",
+  properties: { ok: { type: "BOOLEAN" } },
+  required: ["ok"],
+};
 
-function okResponse(text: string) {
+function chatResponse(
+  content: string | null,
+  finishReason = "stop",
+  status = 200
+) {
   return new Response(
     JSON.stringify({
-      status: "completed",
-      model: "deepseek-v4-pro",
-      output: [
-        { type: "reasoning", content: "PRIVATE_REASONING_SENTINEL" },
+      id: "safe-test-id",
+      object: "chat.completion",
+      model: "deepseek-v4-flash",
+      choices: [
         {
-          type: "message",
-          content: [{ type: "output_text", text }],
+          index: 0,
+          finish_reason: finishReason,
+          message: {
+            role: "assistant",
+            content,
+            reasoning_content: "PRIVATE_REASONING_SENTINEL",
+          },
         },
       ],
     }),
-    { status: 200, headers: { "Content-Type": "application/json" } }
+    { status, headers: { "Content-Type": "application/json" } }
   );
 }
 
-describe("DeepSeek audit Responses adapter", () => {
+function request(task: AuditModelTask, timeoutMs = 1_000) {
+  return generateDeepSeekStructuredJson({
+    task,
+    model: "deepseek-v4-flash",
+    contents: "untrusted evidence sentinel",
+    schema,
+    systemInstruction: "system sentinel",
+    timeoutMs,
+  });
+}
+
+describe("DeepSeek audit Chat Completions adapter", () => {
   beforeEach(() => {
     process.env.DEEPSEEK_API_KEY = "test-key-sentinel";
   });
@@ -62,66 +88,60 @@ describe("DeepSeek audit Responses adapter", () => {
   });
 
   it.each([
-    ["normalization", "deepseek-v4-flash", "none"],
-    ["planner", "deepseek-v4-flash", "low"],
-    ["grader", "deepseek-v4-flash", "low"],
-    ["qa", "deepseek-v4-flash", "low"],
+    ["normalization", "disabled", undefined, 800],
+    ["planner", "enabled", "low", 1_600],
+    ["grader", "enabled", "low", 5_000],
+    ["qa", "enabled", "low", 2_400],
   ] as const)(
-    "uses Responses JSON Schema with task policy for %s",
-    async (task, model, effort) => {
-      const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(okResponse('{"ok":true}'));
+    "uses Chat Completions JSON mode with bounded policy for %s",
+    async (task, thinking, effort, maxTokens) => {
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(chatResponse('{"ok":true}'));
       vi.stubGlobal("fetch", fetchMock);
-      const schema = {
-        type: "OBJECT",
-        properties: { ok: { type: "BOOLEAN" } },
-        required: ["ok"],
-      };
 
-      const result = await generateDeepSeekStructuredJson({
-        task,
-        model,
-        contents: "evidence",
-        schema,
-        systemInstruction: "system",
-        timeoutMs: 1_000,
+      const result = await request(task);
+
+      expect(result).toEqual({
+        text: '{"ok":true}',
+        telemetry: {
+          httpStatus: 200,
+          finishReason: "stop",
+        },
       });
-
-      expect(result).toBe('{"ok":true}');
-      expect(result).not.toContain("PRIVATE_REASONING_SENTINEL");
-      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(result.text).not.toContain("PRIVATE_REASONING_SENTINEL");
       const [url, init] = fetchMock.mock.calls[0];
-      expect(url).toBe(DEEPSEEK_RESPONSES_URL);
+      expect(url).toBe(DEEPSEEK_CHAT_COMPLETIONS_URL);
       const body = JSON.parse(String(init?.body));
       expect(body).toMatchObject({
-        model,
-        instructions: "system",
-        input: "evidence",
-        reasoning: { effort },
-        text: {
-          format: {
-            type: "json_schema",
-            name: `verdict_${task}`,
-            schema: {
-              type: "object",
-              properties: { ok: { type: "boolean" } },
-              required: ["ok"],
-            },
-          },
-        },
+        model: "deepseek-v4-flash",
+        thinking: { type: thinking },
+        max_tokens: maxTokens,
+        response_format: { type: "json_object" },
         stream: false,
-        store: false,
       });
-      expect(body.text.format).not.toHaveProperty("strict");
-      expect(body.reasoning.effort).not.toBe("high");
+      if (effort) expect(body.reasoning_effort).toBe(effort);
+      else expect(body).not.toHaveProperty("reasoning_effort");
+      expect(body).not.toHaveProperty("max_output_tokens");
+      expect(body).not.toHaveProperty("text.format");
+      expect(body.messages[0]).toMatchObject({ role: "system" });
+      expect(body.messages[0].content).toContain("Return valid JSON only");
+      expect(body.messages[0].content).toContain("Verdict output contract");
+      expect(body.messages[0].content).toContain("Do not use markdown fences");
+      expect(body.messages[0].content).toContain('"ok"');
+      expect(body.messages[1]).toEqual({
+        role: "user",
+        content: "untrusted evidence sentinel",
+      });
     }
   );
 
-  it("keeps every task explicit and within bounded output limits", () => {
-    expect(DEEPSEEK_REASONING_EFFORT).toEqual({
-      normalization: "none",
-      planner: "low",
-      grader: "low",
-      qa: "low",
+  it("keeps every task explicit and avoids high reasoning", () => {
+    expect(DEEPSEEK_REASONING_POLICY).toEqual({
+      normalization: { thinking: "disabled" },
+      planner: { thinking: "enabled", effort: "low" },
+      grader: { thinking: "enabled", effort: "low" },
+      qa: { thinking: "enabled", effort: "low" },
     });
     expect(DEEPSEEK_OUTPUT_TOKEN_LIMITS).toEqual({
       normalization: 800,
@@ -129,203 +149,148 @@ describe("DeepSeek audit Responses adapter", () => {
       grader: 5_000,
       qa: 2_400,
     });
-    for (const effort of Object.values(DEEPSEEK_REASONING_EFFORT)) {
-      expect(effort).not.toBe("high");
-      expect(effort).not.toBe("max");
+  });
+
+  it("accepts only stop with non-empty syntactically valid JSON", () => {
+    expect(
+      parseDeepSeekChatCompletionPayload({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: { content: '  {"ok":true}  ' },
+          },
+        ],
+      })
+    ).toEqual({
+      text: '{"ok":true}',
+      telemetry: { httpStatus: 200, finishReason: "stop" },
+    });
+  });
+
+  it.each([
+    ["length", "incomplete_max_output_tokens"],
+    ["insufficient_system_resource", "provider_unavailable"],
+    ["tool_calls", "unexpected_response_status"],
+  ] as const)(
+    "keeps finish_reason=%s attempt-local",
+    (finishReason, category) => {
+      expect(() =>
+        parseDeepSeekChatCompletionPayload({
+          choices: [
+            {
+              finish_reason: finishReason,
+              message: { content: '{"ok":true}' },
+            },
+          ],
+        })
+      ).toThrowError(
+        expect.objectContaining({
+          name: "AttemptLocalModelProviderError",
+          category,
+          telemetry: expect.objectContaining({ finishReason }),
+        })
+      );
+    }
+  );
+
+  it("classifies empty content and malformed JSON as attempt-local", () => {
+    for (const [content, category] of [
+      ["", "missing_output"],
+      ["not-json", "malformed_json"],
+    ] as const) {
+      expect(() =>
+        parseDeepSeekChatCompletionPayload({
+          choices: [{ finish_reason: "stop", message: { content } }],
+        })
+      ).toThrowError(
+        expect.objectContaining({
+          name: "AttemptLocalModelProviderError",
+          category,
+          telemetry: expect.objectContaining({ finishReason: "stop" }),
+        })
+      );
     }
   });
 
-  it("parses completed non-streaming JSON with keep-alive whitespace", async () => {
-    const payload = {
-      status: "completed",
-      model: "deepseek-v4-pro",
-      output: [
-        {
-          type: "message",
-          content: [{ type: "output_text", text: '{"ok":true}' }],
-        },
-      ],
-    };
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(`\n\n  ${JSON.stringify(payload)}  \n\n`, {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
+  it("keeps content filtering terminal", () => {
+    expect(() =>
+      parseDeepSeekChatCompletionPayload({
+        choices: [
+          { finish_reason: "content_filter", message: { content: null } },
+        ],
+      })
+    ).toThrowError(
+      expect.objectContaining({
+        name: "TerminalModelProviderError",
+        safeCategory: "content_safety",
       })
     );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(
-      generateDeepSeekStructuredJson({
-        task: "grader",
-        model: "deepseek-v4-pro",
-        contents: "evidence",
-        schema: { type: "OBJECT" },
-        systemInstruction: "system",
-        timeoutMs: 1_000,
-      })
-    ).resolves.toBe('{"ok":true}');
   });
 
-  it("handles documented incomplete and failed response states safely", () => {
-    expect(() =>
-      parseDeepSeekResponsePayload({
-        status: "incomplete",
-        incomplete_details: { reason: "max_output_tokens" },
-        output: [],
-      })
-    ).toThrowError(expect.objectContaining({
+  it.each([
+    [401, "authentication_error"],
+    [403, "permission_error"],
+    [400, "invalid_request"],
+    [422, "invalid_request"],
+  ] as const)("keeps HTTP %s globally terminal", async (status, safeCategory) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status }))
+    );
+
+    await expect(request("grader")).rejects.toMatchObject({
       name: "TerminalModelProviderError",
-      safeCategory: "invalid_response",
-    }));
-    expect(() =>
-      parseDeepSeekResponsePayload({
-        status: "incomplete",
-        incomplete_details: { reason: "content_filter" },
-        output: [],
-      })
-    ).toThrowError(expect.objectContaining({
-      safeCategory: "content_safety",
-    }));
-    expect(() =>
-      parseDeepSeekResponsePayload({
-        status: "failed",
-        error: { code: "server_error", message: "private detail" },
-        output: [],
-      })
-    ).toThrowError(expect.objectContaining({
-      name: "TransientModelProviderError",
-      category: "unavailable",
-    }));
-    expect(() =>
-      parseDeepSeekResponsePayload({
-        status: "failed",
-        error: { code: "invalid_request_error", message: "private detail" },
-        output: [],
-      })
-    ).toThrowError(expect.objectContaining({
-      name: "TerminalModelProviderError",
-      safeCategory: "application",
-    }));
+      safeCategory,
+      telemetry: { httpStatus: status },
+    });
   });
 
-  it("keeps request timeout fallback-eligible", async () => {
+  it("keeps safety error envelopes globally terminal", () => {
+    expect(() =>
+      parseDeepSeekChatCompletionPayload({
+        error: { code: "content_filter", message: "private provider detail" },
+      })
+    ).toThrowError(
+      expect.objectContaining({
+        name: "TerminalModelProviderError",
+        safeCategory: "content_safety",
+      })
+    );
+  });
+
+  it("keeps request timeout and temporary provider failures fallback-eligible", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn<typeof fetch>().mockRejectedValue(
         new DOMException("timed out", "TimeoutError")
       )
     );
-    await expect(
-      generateDeepSeekStructuredJson({
-        task: "grader",
-        model: "deepseek-v4-pro",
-        contents: "evidence",
-        schema: { type: "OBJECT" },
-        systemInstruction: "system",
-        timeoutMs: 1,
-      })
-    ).rejects.toMatchObject({
-      name: "TransientModelProviderError",
-      category: "timeout",
+    await expect(request("grader", 1)).rejects.toMatchObject({
+      name: "AttemptLocalModelProviderError",
+      category: "provider_timeout",
     });
-  });
 
-  it("maps temporary HTTP and transport failures into fallback-eligible errors", async () => {
-    for (const response of [
-      new Response(null, { status: 429 }),
-      new Response(null, { status: 503 }),
-    ]) {
-      vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(response));
-      await expect(
-        generateDeepSeekStructuredJson({
-          task: "grader",
-          model: "deepseek-v4-pro",
-          contents: "evidence",
-          schema: { type: "OBJECT" },
-          systemInstruction: "system",
-          timeoutMs: 1_000,
-        })
-      ).rejects.toMatchObject({ name: "TransientModelProviderError" });
+    for (const status of [429, 503]) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status }))
+      );
+      await expect(request("grader")).rejects.toMatchObject({
+        name: expect.stringMatching(
+          /(?:Transient|AttemptLocal)ModelProviderError/
+        ),
+      });
     }
-  });
-
-  it("keeps auth and malformed structured responses terminal", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 401 }))
-    );
-    await expect(
-      generateDeepSeekStructuredJson({
-        task: "grader",
-        model: "deepseek-v4-pro",
-        contents: "evidence",
-        schema: { type: "OBJECT" },
-        systemInstruction: "system",
-        timeoutMs: 1_000,
-      })
-    ).rejects.toMatchObject({
-      name: "TerminalModelProviderError",
-      safeCategory: "authentication",
-    });
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn<typeof fetch>().mockResolvedValue(
-        new Response(JSON.stringify({ status: "completed", output: [{ type: "reasoning" }] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
-      )
-    );
-    await expect(
-      generateDeepSeekStructuredJson({
-        task: "grader",
-        model: "deepseek-v4-pro",
-        contents: "evidence",
-        schema: { type: "OBJECT" },
-        systemInstruction: "system",
-        timeoutMs: 1_000,
-      })
-    ).rejects.toMatchObject({
-      name: "TerminalModelProviderError",
-      safeCategory: "invalid_response",
-    });
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn<typeof fetch>().mockResolvedValue(okResponse("not-json"))
-    );
-    await expect(
-      generateDeepSeekStructuredJson({
-        task: "grader",
-        model: "deepseek-v4-pro",
-        contents: "evidence",
-        schema: { type: "OBJECT" },
-        systemInstruction: "system",
-        timeoutMs: 1_000,
-      })
-    ).rejects.toMatchObject({
-      name: "TerminalModelProviderError",
-      safeCategory: "invalid_response",
-    });
   });
 
   it("fails safely without a server-side API key", async () => {
     delete process.env.DEEPSEEK_API_KEY;
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);
-    await expect(
-      generateDeepSeekStructuredJson({
-        task: "planner",
-        model: "deepseek-v4-flash",
-        contents: "evidence",
-        schema: { type: "OBJECT" },
-        systemInstruction: "system",
-        timeoutMs: 1_000,
-      })
-    ).rejects.toMatchObject({
+
+    await expect(request("planner")).rejects.toMatchObject({
       name: "TerminalModelProviderError",
-      safeCategory: "authentication",
+      safeCategory: "authentication_error",
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
