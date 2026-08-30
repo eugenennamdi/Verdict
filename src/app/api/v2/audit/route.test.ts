@@ -10,10 +10,13 @@ import type {
 } from "@x402/core/types";
 import { NextRequest } from "next/server";
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
 import { createAuthorizedAuditHandler } from "@/app/api/v2/audit/route";
 import type { RunVerdictAuditResult } from "@/lib/audit/runVerdictAudit";
 import { ScrapingError } from "@/lib/engine";
-import { GeminiAvailabilityError } from "@/lib/audit/model";
+import { ModelAvailabilityError } from "@/lib/audit/model";
 import {
   protectVerdictAuditRoute,
   type VerdictX402Config,
@@ -288,7 +291,7 @@ describe("POST /api/v2/audit", () => {
 
   it("keeps the public API schema stable for exhausted model availability", async () => {
     const runAudit = vi.fn(async () => {
-      throw new GeminiAvailabilityError("unavailable");
+      throw new ModelAvailabilityError("unavailable");
     });
     const response = await createAuthorizedAuditHandler({ runAudit })(
       request({ url: "https://example.com" })

@@ -9,7 +9,11 @@ const PRIVATE_AVAILABILITY_DETAIL =
 const PRIVATE_PROVIDER_DETAIL = /gemini|google|capacity pool|model ID/i;
 
 export function isSanitizedModelAvailabilityError(error: unknown): boolean {
-  if (error instanceof Error && error.name === "GeminiAvailabilityError") {
+  if (
+    error instanceof Error &&
+    (error.name === "GeminiAvailabilityError" ||
+      error.name === "ModelAvailabilityError")
+  ) {
     return true;
   }
   const message = error instanceof Error ? error.message : String(error ?? "");

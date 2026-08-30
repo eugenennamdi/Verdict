@@ -1,11 +1,10 @@
 import "server-only";
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
 import {
-  createAuditGenerationConfig,
-  runAuditModelWithAvailabilityFailover,
-  type AuditModel,
-} from "@/lib/audit/model";
+  runStructuredModelTask,
+  type StructuredModelGenerator,
+} from "@/lib/audit/structuredModel";
 import { GROWTH_READINESS_FRAMEWORK } from "@/lib/audit/score";
 import type { EvidenceSourceId } from "@/lib/audit/source";
 import type {
@@ -88,15 +87,7 @@ export const AUDIT_QA_SCHEMA = {
   ],
 };
 
-type QaGenerationRequest = {
-  model: AuditModel;
-  contents: string;
-  config: ReturnType<typeof createAuditGenerationConfig>;
-};
-
-export type AuditQaGenerator = (
-  request: QaGenerationRequest
-) => Promise<string>;
+export type AuditQaGenerator = StructuredModelGenerator;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -218,30 +209,6 @@ ${JSON.stringify(groundedContext(input.loaded))}
   `.trim();
 }
 
-async function defaultGenerator(request: QaGenerationRequest): Promise<string> {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-  const response = await new Promise<
-    Awaited<ReturnType<typeof ai.models.generateContent>>
-  >((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error("AUDIT_QA_TIMEOUT")),
-      QA_TIMEOUT_MS
-    );
-    ai.models.generateContent(request).then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        clearTimeout(timer);
-        reject(error);
-      }
-    );
-  });
-  if (!response.text) throw new Error("AUDIT_QA_UNAVAILABLE");
-  return response.text;
-}
-
 export function sanitizeAuditQaResponse(
   value: unknown,
   loaded: LoadedAuditContext
@@ -304,18 +271,13 @@ export async function answerGroundedAuditQuestion(
   options: { generate?: AuditQaGenerator } = {}
 ): Promise<AuditQaAnswer> {
   const contents = buildAuditQaPrompt(input);
-  const generate = options.generate ?? defaultGenerator;
-  const generated = await runAuditModelWithAvailabilityFailover({
+  const generated = await runStructuredModelTask({
     task: "qa",
-    generate: (model) => generate({
-      model,
-      contents,
-      config: createAuditGenerationConfig(
-        "qa",
-        AUDIT_QA_SCHEMA,
-        AUDIT_QA_SYSTEM_INSTRUCTION
-      ),
-    }),
+    contents,
+    schema: AUDIT_QA_SCHEMA,
+    systemInstruction: AUDIT_QA_SYSTEM_INSTRUCTION,
+    deadlineAt: Date.now() + QA_TIMEOUT_MS,
+    generate: options.generate,
   });
   const raw = generated.value;
 

@@ -15,11 +15,17 @@ type GradeMock = (
       task: "normalization" | "planner" | "grader" | "qa",
       metadata: {
         requestedPrimaryModel: "gemini-3.7-flash";
+        provider: "google" | "deepseek";
+        model:
+          | "gemini-3.7-flash"
+          | "gemini-3.6-flash"
+          | "deepseek-v4-flash"
+          | "deepseek-v4-pro";
         modelUsed:
           | "gemini-3.7-flash"
           | "gemini-3.6-flash"
-          | "gemini-3.5-flash-lite"
-          | "gemini-3.5-flash";
+          | "deepseek-v4-flash"
+          | "deepseek-v4-pro";
         tier: "primary" | "secondary" | "tertiary";
         fallbackUsed: boolean;
       }
@@ -67,6 +73,8 @@ const mocks = vi.hoisted(() => ({
   identifyFromMarkdown: vi.fn<IdentifyMock>(async (_markdown, options) => {
     options?.onModelResult?.("normalization", {
       requestedPrimaryModel: "gemini-3.7-flash",
+      provider: "google",
+      model: "gemini-3.7-flash",
       modelUsed: "gemini-3.7-flash",
       tier: "primary",
       fallbackUsed: false,
@@ -81,7 +89,9 @@ const mocks = vi.hoisted(() => ({
   gradeFromMarkdown: vi.fn<GradeMock>(async (_url, _markdown, options) => {
     options?.onModelResult?.("grader", {
       requestedPrimaryModel: "gemini-3.7-flash",
-      modelUsed: "gemini-3.6-flash",
+      provider: "deepseek",
+      model: "deepseek-v4-pro",
+      modelUsed: "deepseek-v4-pro",
       tier: "secondary",
       fallbackUsed: true,
     });
@@ -192,6 +202,8 @@ describe("runVerdictAudit homepage-only regression", () => {
     expect(result.modelProvenance).toEqual({
       normalization: {
         requestedPrimaryModel: "gemini-3.7-flash",
+        provider: "google",
+        model: "gemini-3.7-flash",
         modelUsed: "gemini-3.7-flash",
         tier: "primary",
         fallbackUsed: false,
@@ -199,7 +211,9 @@ describe("runVerdictAudit homepage-only regression", () => {
       planner: [],
       grader: {
         requestedPrimaryModel: "gemini-3.7-flash",
-        modelUsed: "gemini-3.6-flash",
+        provider: "deepseek",
+        model: "deepseek-v4-pro",
+        modelUsed: "deepseek-v4-pro",
         tier: "secondary",
         fallbackUsed: true,
       },

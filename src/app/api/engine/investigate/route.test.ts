@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
 import { createInvestigateHandler } from "./route";
 import type { HumanAuditAccessDecision } from "@/lib/humanAuditAccess";
-import { GeminiAvailabilityError } from "@/lib/audit/model";
+import { ModelAvailabilityError } from "@/lib/audit/model";
 import { MODEL_TEMPORARILY_UNAVAILABLE_MESSAGE } from "@/lib/audit/publicError";
 
 const AVAILABLE = {
@@ -185,7 +188,7 @@ describe("POST /api/engine/investigate human quota", () => {
     const handler = createInvestigateHandler({
       ...dependencies,
       runAudit: vi.fn(async () => {
-        throw new GeminiAvailabilityError("unavailable");
+        throw new ModelAvailabilityError("unavailable");
       }) as never,
     });
 
@@ -224,7 +227,7 @@ describe("POST /api/engine/investigate human quota", () => {
     const handler = createInvestigateHandler({
       ...dependencies,
       runAudit: vi.fn(async () => {
-        throw new GeminiAvailabilityError("rate_limited");
+        throw new ModelAvailabilityError("rate_limited");
       }) as never,
     });
 

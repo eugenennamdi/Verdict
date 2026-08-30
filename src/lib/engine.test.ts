@@ -1,8 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
 
 const mocks = vi.hoisted(() => ({
   generateContent: vi.fn(),
 }));
+const originalDeepSeekApiKey = process.env.DEEPSEEK_API_KEY;
 
 vi.mock("@google/genai", () => ({
   GoogleGenAI: class GoogleGenAI {
@@ -38,7 +41,14 @@ const pillar = {
 
 describe("audit Gemini calls", () => {
   beforeEach(() => {
+    process.env.DEEPSEEK_API_KEY = "test-key";
     mocks.generateContent.mockReset();
+    vi.unstubAllGlobals();
+  });
+
+  afterAll(() => {
+    if (originalDeepSeekApiKey === undefined) delete process.env.DEEPSEEK_API_KEY;
+    else process.env.DEEPSEEK_API_KEY = originalDeepSeekApiKey;
   });
 
   it("uses Gemini 3.7 Flash and the configured thinking levels", async () => {
@@ -150,7 +160,7 @@ describe("audit Gemini calls", () => {
     }
   });
 
-  it("allows normalization, planning, and grading to succeed through bounded 3.6 failover", async () => {
+  it("allows normalization, planning, and grading to succeed through immediate DeepSeek failover", async () => {
     const availabilityError = () =>
       Object.assign(new Error("provider unavailable"), {
         status: 503,
@@ -185,47 +195,84 @@ describe("audit Gemini calls", () => {
         estimated_impact: "Medium",
       },
       priority_matrix: [],
-      evidence_digests: [],
+      evidence_digests: [
+        {
+          sourceId: "S1",
+          keyFindings: ["Grounded"],
+          relevantSignals: ["cta_present"],
+        },
+        {
+          sourceId: "S99",
+          keyFindings: ["Invented"],
+          relevantSignals: [],
+        },
+      ],
     };
 
-    for (const response of [
-      { text: JSON.stringify(identity) },
-      { text: "{}" },
-      { text: JSON.stringify(auditPayload) },
-    ]) {
-      mocks.generateContent
-        .mockRejectedValueOnce(availabilityError())
-        .mockRejectedValueOnce(availabilityError())
-        .mockResolvedValueOnce(response);
+    mocks.generateContent.mockRejectedValue(availabilityError());
+    const deepSeekBodies = [
+      JSON.stringify(identity),
+      "{}",
+      JSON.stringify(auditPayload),
+    ];
+    const fetchMock = vi.fn<typeof fetch>();
+    for (const body of deepSeekBodies) {
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: "completed",
+            model: "deepseek-v4-flash",
+            output: [
+              {
+                type: "message",
+                content: [{ type: "output_text", text: body }],
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      );
     }
+    vi.stubGlobal("fetch", fetchMock);
 
     await identifyFromMarkdown("Product homepage");
     await generateStructuredJson("planner prompt", { type: "OBJECT" }, 1_000);
     const audit = await gradeFromMarkdown(
       "https://example.com",
       "Evidence",
-      { sources: [] }
+      {
+        sources: [
+          {
+            sourceId: "S1",
+            url: "https://example.com/",
+            path: "/",
+            role: "homepage",
+            category: "identity",
+            acquisitionMethod: "firecrawl",
+            chars: 80,
+          },
+        ],
+      }
     );
 
     expect(audit.overallScore).toBe(60);
+    expect(audit.evidenceDigests.map((item: { sourceId: string }) => item.sourceId)).toEqual([
+      "S1",
+    ]);
     expect(
       mocks.generateContent.mock.calls.map(([request]) => request.model)
     ).toEqual([
       "gemini-3.7-flash",
       "gemini-3.7-flash",
-      "gemini-3.6-flash",
       "gemini-3.7-flash",
-      "gemini-3.7-flash",
-      "gemini-3.6-flash",
-      "gemini-3.7-flash",
-      "gemini-3.7-flash",
-      "gemini-3.6-flash",
     ]);
-    for (const offset of [0, 3, 6]) {
-      expect(mocks.generateContent.mock.calls[offset][0].config).toEqual(
-        mocks.generateContent.mock.calls[offset + 2][0].config
-      );
-    }
+    expect(
+      fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).model)
+    ).toEqual([
+      "deepseek-v4-flash",
+      "deepseek-v4-flash",
+      "deepseek-v4-flash",
+    ]);
   });
 
   it("does not fail over when a successful primary response contains malformed JSON", async () => {

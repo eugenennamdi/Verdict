@@ -124,9 +124,8 @@ describe("POST /api/conversation grounded audit routing", () => {
 
     expect(qaGenerator.mock.calls.map(([request]) => request.model)).toEqual([
       "gemini-3.7-flash",
-      "gemini-3.7-flash",
+      "deepseek-v4-flash",
       "gemini-3.6-flash",
-      "gemini-3.5-flash",
     ]);
     expect(payload.message).toContain("Conversion scored **60/100**");
     expect(payload.auditQa.citations).toEqual([]);
