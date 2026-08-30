@@ -109,7 +109,6 @@ export function MessageList({
               domain={message.domain || activeDomain}
               events={message.events}
               active={false}
-              onOpenPanel={onOpenRightPanel}
             />
           );
         }
@@ -155,7 +154,6 @@ export function MessageList({
           events={liveEvents}
           active
           domain={activeDomain}
-          onOpenPanel={onOpenRightPanel}
         />
       )}
 

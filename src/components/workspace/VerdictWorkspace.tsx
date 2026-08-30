@@ -5,7 +5,6 @@ import { usePostHog } from "posthog-js/react";
 import type { ActivityEvent } from "@/lib/audit/events";
 import { extractStartupUrl, FALLBACK_REPLY, rateLimitReply } from "@/lib/conversation/intents";
 import { Composer } from "./Composer";
-import { HumanAuditPayment } from "./HumanAuditPayment";
 import { MessageList } from "./MessageList";
 import { AppSidebar, VerdictLogo } from "./AppSidebar";
 import { WorkspaceTopBar } from "./WorkspaceTopBar";
@@ -14,13 +13,8 @@ import { readInvestigateStream } from "./sse";
 import type { AuditSummary, RecentInvestigation, WorkspaceMessage, WorkspacePhase } from "./types";
 import { conversationalAuditSummary } from "./investigationPresentation";
 import type { PublicAuditQaMetadata } from "@/lib/conversation/auditAnswer";
-import {
-  humanAuditQuotaLabel,
-} from "@/lib/humanAuditQuotaContract";
-import {
-  humanAuditAccessLabel,
-  type HumanAuditUsageState,
-} from "@/lib/humanAuditUsageContract";
+import type { HumanAuditUsageState } from "@/lib/humanAuditUsageContract";
+import { HumanAuditPaywallDialog } from "./HumanAuditPaywallDialog";
 
 const RECENTS_KEY = "verdict_recent_investigations";
 
@@ -69,6 +63,7 @@ export function VerdictWorkspace() {
   const [startTime, setStartTime] = useState<number | null>(null);
   const [humanAuditUsage, setHumanAuditUsage] =
     useState<HumanAuditUsageState | null>(null);
+  const [pendingAuditUrl, setPendingAuditUrl] = useState<string | null>(null);
 
   // Layout states
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -212,6 +207,7 @@ export function VerdictWorkspace() {
 
   const handleNewInvestigation = () => {
     setDraft("");
+    setPendingAuditUrl(null);
     setPhase("idle");
     setMessages([]);
     setLiveEvents([]);
@@ -394,6 +390,18 @@ export function VerdictWorkspace() {
     const text = raw.trim();
     if (!text || busy || inFlightRef.current) return;
 
+    const url = extractStartupUrl(text);
+    if (
+      url &&
+      humanAuditUsage?.free.remaining === 0 &&
+      humanAuditUsage.paid.available === 0
+    ) {
+      setDraft("");
+      setPendingAuditUrl(url);
+      posthog?.capture("audit_payment_preview_opened");
+      return;
+    }
+
     setDraft("");
     const userMessage: WorkspaceMessage = {
       id: nextId(),
@@ -405,7 +413,6 @@ export function VerdictWorkspace() {
     setMessages(nextMessages);
     posthog?.capture("workspace_message_sent", { length: text.length });
 
-    const url = extractStartupUrl(text);
     if (url) {
       posthog?.capture("audit_intent", { source: "url" });
       void runInvestigation(url);
@@ -489,6 +496,7 @@ export function VerdictWorkspace() {
         activeUrl={activeUrl}
         isMobileOpen={isMobileSidebarOpen}
         onMobileClose={() => setIsMobileSidebarOpen(false)}
+        humanAuditUsage={humanAuditUsage}
       />
 
       {/* 2. Center Workspace */}
@@ -531,20 +539,6 @@ export function VerdictWorkspace() {
                     investigating={busy}
                     placeholder="Enter a startup URL (e.g. linear.app, stripe.com) or ask anything..."
                   />
-                  {humanAuditUsage ? (
-                    <p className="mt-2 px-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                      {humanAuditAccessLabel(
-                        humanAuditUsage,
-                        humanAuditQuotaLabel(humanAuditUsage.free)
-                      )}
-                    </p>
-                  ) : null}
-                  {humanAuditUsage ? (
-                    <HumanAuditPayment
-                      usage={humanAuditUsage}
-                      onUsage={setHumanAuditUsage}
-                    />
-                  ) : null}
                 </div>
               </div>
             </div>
@@ -588,20 +582,6 @@ export function VerdictWorkspace() {
                           : "Ask Verdict or paste another URL..."
                     }
                   />
-                  {humanAuditUsage ? (
-                    <p className="mt-2 px-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                      {humanAuditAccessLabel(
-                        humanAuditUsage,
-                        humanAuditQuotaLabel(humanAuditUsage.free)
-                      )}
-                    </p>
-                  ) : null}
-                  {humanAuditUsage ? (
-                    <HumanAuditPayment
-                      usage={humanAuditUsage}
-                      onUsage={setHumanAuditUsage}
-                    />
-                  ) : null}
                 </div>
               </div>
             </div>
@@ -622,6 +602,20 @@ export function VerdictWorkspace() {
         isMobileOpen={isMobileRightPanelOpen}
         onMobileClose={() => setIsMobileRightPanelOpen(false)}
       />
+
+      {pendingAuditUrl && humanAuditUsage ? (
+        <HumanAuditPaywallDialog
+          usage={humanAuditUsage}
+          auditUrl={pendingAuditUrl}
+          onUsage={setHumanAuditUsage}
+          onClose={() => setPendingAuditUrl(null)}
+          onRunAudit={() => {
+            const url = pendingAuditUrl;
+            setPendingAuditUrl(null);
+            handleSend(url);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

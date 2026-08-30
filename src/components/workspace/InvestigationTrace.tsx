@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  Activity,
   AlertCircle,
   Check,
   ChevronDown,
@@ -19,14 +18,12 @@ type InvestigationTraceProps = {
   events: ActivityEvent[];
   active: boolean;
   domain?: string;
-  onOpenPanel?: () => void;
 };
 
 export function InvestigationTrace({
   events,
   active,
   domain,
-  onOpenPanel,
 }: InvestigationTraceProps) {
   const [expanded, setExpanded] = useState(false);
   const rows = presentActivityEvents(events);
@@ -95,16 +92,6 @@ export function InvestigationTrace({
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
-            {onOpenPanel && (
-              <button
-                type="button"
-                onClick={onOpenPanel}
-                className="inline-flex items-center gap-1 rounded-xl border border-slate-200/80 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 shadow-2xs transition-colors hover:border-orange-500/50 hover:text-orange-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-              >
-                <Activity className="size-3 text-orange-500" />
-                <span>View activity</span>
-              </button>
-            )}
             <button
               type="button"
               onClick={() => setExpanded((previous) => !previous)}
@@ -143,15 +130,6 @@ export function InvestigationTrace({
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
-          {onOpenPanel && (
-            <button
-              type="button"
-              onClick={onOpenPanel}
-              className="hidden rounded-md px-1.5 py-0.5 text-[11px] font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white lg:inline-flex"
-            >
-              View activity
-            </button>
-          )}
           <button
             type="button"
             onClick={() => setExpanded((previous) => !previous)}

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { HumanWalletProvider } from "@/providers/HumanWalletProvider";
 import { PostHogProvider } from "@/providers/PostHogProvider";
 
 const geistSans = Geist({
@@ -56,7 +57,7 @@ export default function RootLayout({
             defaultTheme="dark"
             disableTransitionOnChange
           >
-            {children}
+            <HumanWalletProvider>{children}</HumanWalletProvider>
           </ThemeProvider>
         </PostHogProvider>
       </body>

@@ -4,17 +4,18 @@ import { x402Client, wrapFetchWithPayment } from "@x402/fetch";
 import { type ClientEvmSigner } from "@x402/evm";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
 import {
-  createWalletClient,
-  custom,
+  type Account,
+  type Chain,
+  type Transport,
   type TypedDataDomain,
   type TypedDataParameter,
+  type WalletClient,
 } from "viem";
-import { base, baseSepolia } from "viem/chains";
+import { humanPaymentChain } from "@/lib/humanWalletChain";
 import type { HumanAuditUsageState } from "@/lib/humanAuditUsageContract";
 
 export type HumanAuditPaymentStatus =
   | "idle"
-  | "connecting"
   | "wrong_network"
   | "insufficient_balance"
   | "awaiting_signature"
@@ -24,15 +25,10 @@ export type HumanAuditPaymentStatus =
   | "declined"
   | "failed";
 
-export type Eip1193Provider = {
-  request(input: {
-    method: string;
-    params?: readonly unknown[] | object;
-  }): Promise<unknown>;
-};
+export type HumanAuditWalletClient = WalletClient<Transport, Chain, Account>;
 
 type PurchaseOptions = {
-  provider: Eip1193Provider;
+  walletClient: HumanAuditWalletClient;
   fetchImpl?: typeof fetch;
   onStatus?: (status: HumanAuditPaymentStatus) => void;
 };
@@ -67,51 +63,16 @@ export function classifyHumanAuditPaymentError(
   return "failed";
 }
 
-export async function purchaseHumanAuditEntitlement(
-  options: PurchaseOptions
-): Promise<HumanAuditUsageState> {
-  const onStatus = options.onStatus ?? (() => undefined);
-  const chain = process.env.NODE_ENV === "production" ? base : baseSepolia;
-  const chainId = `0x${chain.id.toString(16)}`;
-
-  onStatus("connecting");
-  const accounts = (await options.provider.request({
-    method: "eth_requestAccounts",
-  })) as unknown;
-  const address = Array.isArray(accounts) ? accounts[0] : undefined;
-  if (typeof address !== "string" || !/^0x[0-9a-f]{40}$/i.test(address)) {
-    throw new Error("Wallet did not provide an EVM account");
+export function createHumanAuditX402Signer(
+  walletClient: HumanAuditWalletClient
+): ClientEvmSigner {
+  const account = walletClient.account;
+  if (!account) {
+    throw new Error("A connected wallet account is required");
   }
 
-  try {
-    await options.provider.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId }],
-    });
-  } catch (error: unknown) {
-    if (errorCode(error) !== 4902) throw error;
-    await options.provider.request({
-      method: "wallet_addEthereumChain",
-      params: [
-        {
-          chainId,
-          chainName: chain.name,
-          nativeCurrency: chain.nativeCurrency,
-          rpcUrls: chain.rpcUrls.default.http,
-          blockExplorerUrls: [chain.blockExplorers.default.url],
-        },
-      ],
-    });
-  }
-
-  const account = address as `0x${string}`;
-  const walletClient = createWalletClient({
-    account,
-    chain,
-    transport: custom(options.provider),
-  });
-  const signer: ClientEvmSigner = {
-    address: account,
+  return {
+    address: account.address,
     signTypedData: async ({ domain, types, primaryType, message }) =>
       walletClient.signTypedData({
         account,
@@ -121,6 +82,16 @@ export async function purchaseHumanAuditEntitlement(
         message,
       }),
   };
+}
+
+export async function purchaseHumanAuditEntitlement(
+  options: PurchaseOptions
+): Promise<HumanAuditUsageState> {
+  const onStatus = options.onStatus ?? (() => undefined);
+  if (options.walletClient.chain?.id !== humanPaymentChain.id) {
+    throw new Error("Wallet is connected to the wrong payment network");
+  }
+  const signer = createHumanAuditX402Signer(options.walletClient);
 
   const client = new x402Client();
   client.register("eip155:*", new ExactEvmScheme(signer));
