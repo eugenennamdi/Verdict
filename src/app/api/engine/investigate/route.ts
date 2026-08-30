@@ -14,11 +14,12 @@ import {
   type AnonymousAuditVisitor,
 } from "@/lib/humanAuditIdentity";
 import {
-  canStartHumanAudit,
-  recordSuccessfulHumanAudit,
-  releaseHumanAuditReservation,
+  completeHumanAuditAccess,
+  releaseHumanAuditAccess,
+  reserveHumanAuditAccess,
   type HumanAuditAccessDecision,
-} from "@/lib/humanAuditQuota";
+  type HumanAuditReservedAccess,
+} from "@/lib/humanAuditAccess";
 import { humanAuditQuotaExhaustedMessage } from "@/lib/humanAuditQuotaContract";
 import { redis } from "@/lib/redis";
 import { ScrapingError } from "@/lib/engine";
@@ -41,9 +42,9 @@ type InvestigateDependencies = {
   runAudit?: typeof runVerdictAudit;
   summarize?: (result: RunVerdictAuditResult) => Record<string, unknown>;
   resolveVisitor?: (request: Request) => AnonymousAuditVisitor;
-  reserveQuota?: (identity: string) => Promise<HumanAuditAccessDecision>;
-  commitQuota?: typeof recordSuccessfulHumanAudit;
-  releaseQuota?: typeof releaseHumanAuditReservation;
+  reserveAccess?: (identity: string) => Promise<HumanAuditAccessDecision>;
+  completeAccess?: typeof completeHumanAuditAccess;
+  releaseAccess?: typeof releaseHumanAuditAccess;
   checkAbuse?: (request: Request) => Promise<AbuseDecision>;
 };
 
@@ -93,10 +94,10 @@ export function createInvestigateHandler(
   const summarize = dependencies.summarize ?? summarizeVerdictAuditResult;
   const resolveVisitor =
     dependencies.resolveVisitor ?? resolveAnonymousAuditVisitor;
-  const reserveQuota = dependencies.reserveQuota ?? canStartHumanAudit;
-  const commitQuota = dependencies.commitQuota ?? recordSuccessfulHumanAudit;
-  const releaseQuota =
-    dependencies.releaseQuota ?? releaseHumanAuditReservation;
+  const reserveAccess = dependencies.reserveAccess ?? reserveHumanAuditAccess;
+  const completeAccess =
+    dependencies.completeAccess ?? completeHumanAuditAccess;
+  const releaseAccess = dependencies.releaseAccess ?? releaseHumanAuditAccess;
   const checkAbuse = dependencies.checkAbuse ?? checkAuditAbuseLimit;
 
   return async function handleInvestigate(req: Request): Promise<Response> {
@@ -138,7 +139,7 @@ export function createInvestigateHandler(
 
     let access: HumanAuditAccessDecision;
     try {
-      access = await reserveQuota(visitor.quotaIdentity);
+      access = await reserveAccess(visitor.quotaIdentity);
     } catch {
       return attachAnonymousVisitorCookie(
         NextResponse.json(
@@ -153,9 +154,10 @@ export function createInvestigateHandler(
       return attachAnonymousVisitorCookie(
         NextResponse.json(
           {
-            error: "HUMAN_AUDIT_QUOTA_EXHAUSTED",
-            message: humanAuditQuotaExhaustedMessage(access.quota),
-            quota: access.quota,
+            error: "HUMAN_AUDIT_PAYMENT_REQUIRED",
+            message: humanAuditQuotaExhaustedMessage(access.usage.free),
+            quota: access.usage.free,
+            usage: access.usage,
           },
           { status: 429 }
         ),
@@ -168,6 +170,7 @@ export function createInvestigateHandler(
         const send = (payload: StreamFrame) =>
           controller.enqueue(sseFrame(payload));
         let committed = false;
+        const reservedAccess: HumanAuditReservedAccess = access.access;
         try {
           const result = await runAudit({
             url,
@@ -177,9 +180,9 @@ export function createInvestigateHandler(
             },
           });
 
-          const quota = await commitQuota(
+          const usage = await completeAccess(
             visitor.quotaIdentity,
-            access.reservationToken,
+            reservedAccess,
             result.reportId
           );
           committed = true;
@@ -187,16 +190,17 @@ export function createInvestigateHandler(
             kind: "result",
             result: {
               ...summarize(result),
-              humanAuditQuota: quota,
+              humanAuditQuota: usage.free,
+              humanAuditUsage: usage,
             },
           });
           controller.close();
         } catch (error: unknown) {
           if (!committed) {
             try {
-              await releaseQuota(
+              await releaseAccess(
                 visitor.quotaIdentity,
-                access.reservationToken
+                reservedAccess
               );
             } catch {
               console.error("Human audit quota reservation release failed");

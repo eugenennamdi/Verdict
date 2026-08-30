@@ -191,15 +191,19 @@ describe("POST /api/conversation grounded audit routing", () => {
         },
       ],
     }));
-    const getNewAuditQuota = vi.fn(async () => ({
-      quota: {
-        limit: 3,
-        used: 3,
-        remaining: 0,
-        nextAvailableAt: "2026-08-04T10:00:00.000Z",
+    const getNewAuditUsage = vi.fn(async () => ({
+      usage: {
+        free: {
+          limit: 3,
+          used: 3,
+          remaining: 0,
+          nextAvailableAt: "2026-08-04T10:00:00.000Z",
+        },
+        paid: { available: 0 },
+        canStartAudit: false,
       },
     }));
-    const handler = createConversationHandler({ complete, getNewAuditQuota });
+    const handler = createConversationHandler({ complete, getNewAuditUsage });
 
     const response = await handler(
       request({
@@ -211,15 +215,55 @@ describe("POST /api/conversation grounded audit routing", () => {
     const payload = await response.json();
 
     expect(payload).toMatchObject({
-      action: "quota_exhausted",
+      action: "payment_required",
       url: null,
       quota: { used: 3, remaining: 0 },
     });
   });
 
+  it("allows a new audit action when paid access is available", async () => {
+    const complete = vi.fn(async () => ({
+      content: null,
+      toolCalls: [
+        {
+          name: "start_startup_audit",
+          arguments: JSON.stringify({ url: "https://stripe.com" }),
+        },
+      ],
+    }));
+    const handler = createConversationHandler({
+      complete,
+      getNewAuditUsage: async () => ({
+        usage: {
+          free: {
+            limit: 3,
+            used: 3,
+            remaining: 0,
+            nextAvailableAt: "2026-08-31T10:00:00.000Z",
+          },
+          paid: { available: 1 },
+          canStartAudit: true,
+        },
+      }),
+    });
+
+    expect(
+      await (
+        await handler(
+          request({
+            messages: [{ role: "user", content: "Audit https://stripe.com" }],
+          })
+        )
+      ).json()
+    ).toMatchObject({
+      action: "start_audit",
+      usage: { paid: { available: 1 }, canStartAudit: true },
+    });
+  });
+
   it("allows audit follow-up Q&A when the visitor is at 3/3", async () => {
     const loaded = makeLoadedAuditContext();
-    const getNewAuditQuota = vi.fn();
+    const getNewAuditUsage = vi.fn();
     const answerGrounded = vi.fn(async () => ({
       answer: "Conversion is constrained by the pricing evidence. [S2]",
       citations: ["S2" as const],
@@ -230,7 +274,7 @@ describe("POST /api/conversation grounded audit routing", () => {
     const handler = createConversationHandler({
       loadContext: async () => loaded,
       answerGrounded,
-      getNewAuditQuota,
+      getNewAuditUsage,
     });
 
     const response = await handler(
@@ -242,7 +286,7 @@ describe("POST /api/conversation grounded audit routing", () => {
 
     expect(response.status).toBe(200);
     expect(answerGrounded).toHaveBeenCalledOnce();
-    expect(getNewAuditQuota).not.toHaveBeenCalled();
+    expect(getNewAuditUsage).not.toHaveBeenCalled();
   });
 
   it("allows general conversation when the visitor is at 3/3", async () => {
@@ -250,15 +294,15 @@ describe("POST /api/conversation grounded audit routing", () => {
       content: "I can explain the audit framework.",
       toolCalls: [],
     }));
-    const getNewAuditQuota = vi.fn();
-    const handler = createConversationHandler({ complete, getNewAuditQuota });
+    const getNewAuditUsage = vi.fn();
+    const handler = createConversationHandler({ complete, getNewAuditUsage });
 
     const response = await handler(
       request({ messages: [{ role: "user", content: "What can you do?" }] })
     );
 
     expect(await response.json()).toMatchObject({ action: "respond" });
-    expect(getNewAuditQuota).not.toHaveBeenCalled();
+    expect(getNewAuditUsage).not.toHaveBeenCalled();
   });
 
   it("handles a missing active report without either model", async () => {

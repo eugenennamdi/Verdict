@@ -2,6 +2,7 @@ import { isAddress } from "ethers";
 import { createCdpFacilitatorClient } from "@coinbase/cdp-sdk/x402";
 import {
   HTTPFacilitatorClient,
+  type SettleResultContext,
   type FacilitatorClient,
   type RouteConfig,
   x402ResourceServer,
@@ -13,6 +14,7 @@ import {
   DEFAULT_VERDICT_AUDIT_PRICE,
   VERDICT_AUDIT_DESCRIPTION,
   VERDICT_CDP_FACILITATOR_URL,
+  VERDICT_HUMAN_AUDIT_ENTITLEMENT_DESCRIPTION,
   VERDICT_X402_NETWORKS,
   type VerdictX402Network,
 } from "@/lib/x402/constants";
@@ -21,6 +23,7 @@ export {
   DEFAULT_VERDICT_AUDIT_PRICE,
   VERDICT_AUDIT_DESCRIPTION,
   VERDICT_CDP_FACILITATOR_URL,
+  VERDICT_HUMAN_AUDIT_ENTITLEMENT_DESCRIPTION,
   VERDICT_X402_NETWORKS,
 } from "@/lib/x402/constants";
 export type { VerdictX402Network } from "@/lib/x402/constants";
@@ -221,6 +224,24 @@ export function createVerdictAuditPaymentConfig(
   };
 }
 
+export function createVerdictHumanEntitlementPaymentConfig(
+  config: VerdictX402Config
+): RouteConfig {
+  return {
+    accepts: [
+      {
+        scheme: "exact",
+        network: config.network,
+        price: config.price,
+        payTo: config.payTo,
+        extra: { paymentFlow: "upfront" },
+      },
+    ],
+    description: VERDICT_HUMAN_AUDIT_ENTITLEMENT_DESCRIPTION,
+    mimeType: "application/json",
+  };
+}
+
 function assertCdpCredentials(env: NodeJS.ProcessEnv): void {
   const missing = REQUIRED_CDP_ENV.filter((name) => !env[name]?.trim());
   if (missing.length > 0) {
@@ -272,6 +293,29 @@ export function protectVerdictAuditRoute<T>(
   return withX402(
     handler,
     createVerdictAuditPaymentConfig(config),
+    server,
+    undefined,
+    undefined,
+    options.syncFacilitatorOnStart
+  );
+}
+
+export function protectVerdictHumanEntitlementRoute<T>(
+  handler: (request: NextRequest) => Promise<NextResponse<T>>,
+  config: VerdictX402Config,
+  onSettled: (context: SettleResultContext) => Promise<void>,
+  options: {
+    facilitator?: FacilitatorClient;
+    syncFacilitatorOnStart?: boolean;
+  } = {}
+): (request: NextRequest) => Promise<NextResponse<T>> {
+  const server = createVerdictX402ResourceServer(
+    config,
+    options.facilitator
+  ).onAfterSettle(onSettled);
+  return withX402(
+    handler,
+    createVerdictHumanEntitlementPaymentConfig(config),
     server,
     undefined,
     undefined,

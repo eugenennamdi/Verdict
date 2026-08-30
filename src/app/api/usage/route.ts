@@ -6,25 +6,25 @@ import {
   resolveAnonymousAuditVisitor,
   type AnonymousAuditVisitor,
 } from "@/lib/humanAuditIdentity";
-import { getHumanAuditQuota } from "@/lib/humanAuditQuota";
-import type { HumanAuditQuotaState } from "@/lib/humanAuditQuotaContract";
+import { getHumanAuditUsage } from "@/lib/humanAuditAccess";
+import type { HumanAuditUsageState } from "@/lib/humanAuditUsageContract";
 
 type UsageDependencies = {
   resolveVisitor?: (request: Request) => AnonymousAuditVisitor;
-  getQuota?: (identity: string) => Promise<HumanAuditQuotaState>;
+  getUsage?: (identity: string) => Promise<HumanAuditUsageState>;
 };
 
 export function createUsageHandler(dependencies: UsageDependencies = {}) {
   const resolveVisitor =
     dependencies.resolveVisitor ?? resolveAnonymousAuditVisitor;
-  const getQuota = dependencies.getQuota ?? getHumanAuditQuota;
+  const getUsage = dependencies.getUsage ?? getHumanAuditUsage;
 
   return async function handleUsage(request: Request): Promise<Response> {
     try {
       const visitor = resolveVisitor(request);
-      const quota = await getQuota(visitor.quotaIdentity);
+      const usage = await getUsage(visitor.quotaIdentity);
       return attachAnonymousVisitorCookie(
-        NextResponse.json(quota, {
+        NextResponse.json(usage, {
           headers: { "Cache-Control": "private, no-store" },
         }),
         visitor

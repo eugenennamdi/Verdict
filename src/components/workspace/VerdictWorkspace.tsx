@@ -5,6 +5,7 @@ import { usePostHog } from "posthog-js/react";
 import type { ActivityEvent } from "@/lib/audit/events";
 import { extractStartupUrl, FALLBACK_REPLY, rateLimitReply } from "@/lib/conversation/intents";
 import { Composer } from "./Composer";
+import { HumanAuditPayment } from "./HumanAuditPayment";
 import { MessageList } from "./MessageList";
 import { AppSidebar, VerdictLogo } from "./AppSidebar";
 import { WorkspaceTopBar } from "./WorkspaceTopBar";
@@ -15,8 +16,11 @@ import { conversationalAuditSummary } from "./investigationPresentation";
 import type { PublicAuditQaMetadata } from "@/lib/conversation/auditAnswer";
 import {
   humanAuditQuotaLabel,
-  type HumanAuditQuotaState,
 } from "@/lib/humanAuditQuotaContract";
+import {
+  humanAuditAccessLabel,
+  type HumanAuditUsageState,
+} from "@/lib/humanAuditUsageContract";
 
 const RECENTS_KEY = "verdict_recent_investigations";
 
@@ -63,8 +67,8 @@ export function VerdictWorkspace() {
   const [activeScore, setActiveScore] = useState<number | undefined>();
   const [activeResult, setActiveResult] = useState<AuditSummary | undefined>();
   const [startTime, setStartTime] = useState<number | null>(null);
-  const [humanAuditQuota, setHumanAuditQuota] =
-    useState<HumanAuditQuotaState | null>(null);
+  const [humanAuditUsage, setHumanAuditUsage] =
+    useState<HumanAuditUsageState | null>(null);
 
   // Layout states
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -106,10 +110,10 @@ export function VerdictWorkspace() {
     void fetch("/api/usage", { method: "GET" })
       .then(async (response) => {
         if (!response.ok) return null;
-        return (await response.json()) as HumanAuditQuotaState;
+        return (await response.json()) as HumanAuditUsageState;
       })
-      .then((quota) => {
-        if (!cancelled && quota) setHumanAuditQuota(quota);
+      .then((usage) => {
+        if (!cancelled && usage) setHumanAuditUsage(usage);
       })
       .catch(() => undefined);
     return () => {
@@ -270,11 +274,11 @@ export function VerdictWorkspace() {
           const payload = (await response.json()) as {
             message?: string;
             retryAfterSeconds?: number;
-            quota?: HumanAuditQuotaState;
+            usage?: HumanAuditUsageState;
           };
           retryAfterSeconds = payload.retryAfterSeconds;
           message = payload.message;
-          if (payload.quota) setHumanAuditQuota(payload.quota);
+          if (payload.usage) setHumanAuditUsage(payload.usage);
         } catch {
           retryAfterSeconds = undefined;
         }
@@ -308,8 +312,8 @@ export function VerdictWorkspace() {
           setActiveCompany(company);
           setActiveScore(result.overallScore);
           setActiveResult(result);
-          if (result.humanAuditQuota) {
-            setHumanAuditQuota(result.humanAuditQuota);
+          if (result.humanAuditUsage) {
+            setHumanAuditUsage(result.humanAuditUsage);
           }
 
           const traceMsg: WorkspaceMessage = {
@@ -449,10 +453,10 @@ export function VerdictWorkspace() {
         message?: string;
         url?: string | null;
         auditQa?: PublicAuditQaMetadata;
-        quota?: HumanAuditQuotaState;
+        usage?: HumanAuditUsageState;
       } | null;
 
-      if (payload?.quota) setHumanAuditQuota(payload.quota);
+      if (payload?.usage) setHumanAuditUsage(payload.usage);
 
       if (payload?.action === "start_audit" && payload.url) {
         posthog?.capture("audit_intent", { source: "conversation" });
@@ -527,10 +531,19 @@ export function VerdictWorkspace() {
                     investigating={busy}
                     placeholder="Enter a startup URL (e.g. linear.app, stripe.com) or ask anything..."
                   />
-                  {humanAuditQuota ? (
+                  {humanAuditUsage ? (
                     <p className="mt-2 px-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                      {humanAuditQuotaLabel(humanAuditQuota)}
+                      {humanAuditAccessLabel(
+                        humanAuditUsage,
+                        humanAuditQuotaLabel(humanAuditUsage.free)
+                      )}
                     </p>
+                  ) : null}
+                  {humanAuditUsage ? (
+                    <HumanAuditPayment
+                      usage={humanAuditUsage}
+                      onUsage={setHumanAuditUsage}
+                    />
                   ) : null}
                 </div>
               </div>
@@ -575,10 +588,19 @@ export function VerdictWorkspace() {
                           : "Ask Verdict or paste another URL..."
                     }
                   />
-                  {humanAuditQuota ? (
+                  {humanAuditUsage ? (
                     <p className="mt-2 px-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                      {humanAuditQuotaLabel(humanAuditQuota)}
+                      {humanAuditAccessLabel(
+                        humanAuditUsage,
+                        humanAuditQuotaLabel(humanAuditUsage.free)
+                      )}
                     </p>
+                  ) : null}
+                  {humanAuditUsage ? (
+                    <HumanAuditPayment
+                      usage={humanAuditUsage}
+                      onUsage={setHumanAuditUsage}
+                    />
                   ) : null}
                 </div>
               </div>

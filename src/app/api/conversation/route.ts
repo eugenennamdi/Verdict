@@ -27,11 +27,11 @@ import {
   resolveAnonymousAuditVisitor,
   type AnonymousAuditVisitor,
 } from "@/lib/humanAuditIdentity";
-import { getHumanAuditQuota } from "@/lib/humanAuditQuota";
+import { getHumanAuditUsage } from "@/lib/humanAuditAccess";
 import {
   humanAuditQuotaExhaustedMessage,
-  type HumanAuditQuotaState,
 } from "@/lib/humanAuditQuotaContract";
+import type { HumanAuditUsageState } from "@/lib/humanAuditUsageContract";
 import { redis } from "@/lib/redis";
 
 const MAX_MESSAGES = 10;
@@ -194,8 +194,8 @@ type ConversationDependencies = {
   loadContext?: (reportId: string) => Promise<LoadedAuditContext | null>;
   answerGrounded?: typeof answerGroundedAuditQuestion;
   qaGenerator?: AuditQaGenerator;
-  getNewAuditQuota?: (request: Request) => Promise<{
-    quota: HumanAuditQuotaState;
+  getNewAuditUsage?: (request: Request) => Promise<{
+    usage: HumanAuditUsageState;
     visitor?: AnonymousAuditVisitor;
   }>;
 };
@@ -340,25 +340,30 @@ export function createConversationHandler(
         content: completion.content,
         toolCalls: completion.toolCalls,
       });
-      if (action.action !== "start_audit" || !dependencies.getNewAuditQuota) {
+      if (action.action !== "start_audit" || !dependencies.getNewAuditUsage) {
         return NextResponse.json(action);
       }
 
       try {
-        const access = await dependencies.getNewAuditQuota(req);
-        if (access.quota.remaining === 0) {
+        const access = await dependencies.getNewAuditUsage(req);
+        if (!access.usage.canStartAudit) {
           return withOptionalVisitorCookie(
             NextResponse.json({
-              action: "quota_exhausted",
-              message: humanAuditQuotaExhaustedMessage(access.quota),
+              action: "payment_required",
+              message: humanAuditQuotaExhaustedMessage(access.usage.free),
               url: null,
-              quota: access.quota,
+              quota: access.usage.free,
+              usage: access.usage,
             }),
             access.visitor
           );
         }
         return withOptionalVisitorCookie(
-          NextResponse.json({ ...action, quota: access.quota }),
+          NextResponse.json({
+            ...action,
+            quota: access.usage.free,
+            usage: access.usage,
+          }),
           access.visitor
         );
       } catch {
@@ -380,10 +385,10 @@ export function createConversationHandler(
 }
 
 const conversationHandler = createConversationHandler({
-  getNewAuditQuota: async (request) => {
+  getNewAuditUsage: async (request) => {
     const visitor = resolveAnonymousAuditVisitor(request);
-    const quota = await getHumanAuditQuota(visitor.quotaIdentity);
-    return { quota, visitor };
+    const usage = await getHumanAuditUsage(visitor.quotaIdentity);
+    return { usage, visitor };
   },
 });
 

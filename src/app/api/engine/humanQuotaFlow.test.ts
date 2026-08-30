@@ -11,6 +11,7 @@ import {
   recordSuccessfulHumanAudit,
   releaseHumanAuditReservation,
 } from "@/lib/humanAuditQuota";
+import type { HumanAuditReservedAccess } from "@/lib/humanAuditAccess";
 import { makeLoadedAuditContext } from "@/lib/conversation/__testutils__/auditContext";
 
 const VISITOR = "local-smoke-visitor";
@@ -47,24 +48,66 @@ describe("mock-backed human quota product flow", () => {
     const handler = createInvestigateHandler({
       resolveVisitor: () => ({ quotaIdentity: VISITOR }),
       checkAbuse: async () => ({ allowed: true }),
-      reserveQuota: (identity) =>
-        canStartHumanAudit(identity, {
+      reserveAccess: async (identity: string) => {
+        const free = await canStartHumanAudit(identity, {
           store,
           nowMs,
           generateToken: () => `reservation-${auditNumber + 1}`,
-        }),
-      commitQuota: async (identity, token, reportId) => {
-        const quota = await recordSuccessfulHumanAudit(
+        });
+        return free.allowed
+          ? {
+              allowed: true as const,
+              access: {
+                accessType: "free" as const,
+                reservationToken: free.reservationToken,
+              },
+              usage: {
+                free: free.quota,
+                paid: { available: 0 },
+                canStartAudit: true,
+              },
+            }
+          : {
+              allowed: false as const,
+              reason: "payment_required" as const,
+              usage: {
+                free: free.quota,
+                paid: { available: 0 },
+                canStartAudit: false,
+              },
+            };
+      },
+      completeAccess: async (
+        identity: string,
+        access: HumanAuditReservedAccess,
+        reportId: string | undefined
+      ) => {
+        if (access.accessType !== "free") throw new Error("expected free access");
+        const free = await recordSuccessfulHumanAudit(
           identity,
-          token,
+          access.reservationToken,
           reportId,
           { store, nowMs }
         );
         nowMs += 1_000;
-        return quota;
+        return {
+          free,
+          paid: { available: 0 },
+          canStartAudit: free.remaining > 0,
+        };
       },
-      releaseQuota: (identity, token) =>
-        releaseHumanAuditReservation(identity, token, { store, nowMs }),
+      releaseAccess: async (
+        identity: string,
+        access: HumanAuditReservedAccess
+      ) => {
+        if (access.accessType === "free") {
+          await releaseHumanAuditReservation(
+            identity,
+            access.reservationToken,
+            { store, nowMs }
+          );
+        }
+      },
       runAudit: runAudit as never,
       summarize: () => ({ overallScore: 80 }),
     });
@@ -85,17 +128,21 @@ describe("mock-backed human quota product flow", () => {
     const fourth = await handler(auditRequest("https://fourth.example"));
     expect(fourth.status).toBe(429);
     expect(await fourth.json()).toMatchObject({
-      error: "HUMAN_AUDIT_QUOTA_EXHAUSTED",
+      error: "HUMAN_AUDIT_PAYMENT_REQUIRED",
       quota: { used: 3, remaining: 0 },
     });
     expect(runAudit).toHaveBeenCalledTimes(3);
 
-    const getNewAuditQuota = vi.fn(async () => ({
-      quota: await getHumanAuditQuota(VISITOR, { store, nowMs }),
+    const getNewAuditUsage = vi.fn(async () => ({
+      usage: {
+        free: await getHumanAuditQuota(VISITOR, { store, nowMs }),
+        paid: { available: 0 },
+        canStartAudit: false,
+      },
     }));
     const followup = createConversationHandler({
       loadContext: async () => makeLoadedAuditContext(),
-      getNewAuditQuota,
+      getNewAuditUsage,
     });
     const followupResponse = await followup(
       conversationRequest("Did you inspect the pricing page?", REPORT_ID)
@@ -107,10 +154,10 @@ describe("mock-backed human quota product flow", () => {
       content: "General conversation remains available.",
       toolCalls: [],
     }));
-    const general = createConversationHandler({ complete, getNewAuditQuota });
+    const general = createConversationHandler({ complete, getNewAuditUsage });
     expect(
       await (await general(conversationRequest("hello"))).json()
     ).toMatchObject({ message: "General conversation remains available." });
-    expect(getNewAuditQuota).not.toHaveBeenCalled();
+    expect(getNewAuditUsage).not.toHaveBeenCalled();
   });
 });

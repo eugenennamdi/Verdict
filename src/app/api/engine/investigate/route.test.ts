@@ -1,17 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 import { createInvestigateHandler } from "./route";
+import type { HumanAuditAccessDecision } from "@/lib/humanAuditAccess";
 
 const AVAILABLE = {
   allowed: true as const,
-  accessType: "free" as const,
-  reservationToken: "reservation-token",
-  quota: { limit: 3, used: 0, remaining: 2, nextAvailableAt: null },
+  access: {
+    accessType: "free" as const,
+    reservationToken: "reservation-token",
+  },
+  usage: {
+    free: { limit: 3, used: 0, remaining: 2, nextAvailableAt: null },
+    paid: { available: 0 },
+    canStartAudit: true,
+  },
 };
 const AFTER_SUCCESS = {
-  limit: 3,
-  used: 1,
-  remaining: 2,
-  nextAvailableAt: null,
+  free: { limit: 3, used: 1, remaining: 2, nextAvailableAt: null },
+  paid: { available: 0 },
+  canStartAudit: true,
 };
 
 function request(body: unknown): Request {
@@ -23,6 +29,9 @@ function request(body: unknown): Request {
 }
 
 function baseDependencies() {
+  const reserveAccess = vi.fn(
+    async (): Promise<HumanAuditAccessDecision> => AVAILABLE
+  );
   return {
     resolveVisitor: () => ({
       quotaIdentity: "visitor-hash",
@@ -30,14 +39,9 @@ function baseDependencies() {
         "verdict_anonymous_visitor=signed; Path=/; HttpOnly; SameSite=Lax",
     }),
     checkAbuse: vi.fn(async () => ({ allowed: true })),
-    reserveQuota: vi.fn(async () => AVAILABLE),
-    commitQuota: vi.fn(async () => AFTER_SUCCESS),
-    releaseQuota: vi.fn(async () => ({
-      limit: 3,
-      used: 0,
-      remaining: 3,
-      nextAvailableAt: null,
-    })),
+    reserveAccess,
+    completeAccess: vi.fn(async () => AFTER_SUCCESS),
+    releaseAccess: vi.fn(async () => undefined),
     summarize: vi.fn(() => ({ overallScore: 80, reportId: "report-1" })),
   };
 }
@@ -57,31 +61,74 @@ describe("POST /api/engine/investigate human quota", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("set-cookie")).toContain("HttpOnly");
     expect(runAudit).toHaveBeenCalledOnce();
-    expect(dependencies.commitQuota).toHaveBeenCalledWith(
+    expect(dependencies.completeAccess).toHaveBeenCalledWith(
       "visitor-hash",
-      "reservation-token",
+      AVAILABLE.access,
       "report-1"
     );
-    expect(dependencies.releaseQuota).not.toHaveBeenCalled();
+    expect(dependencies.releaseAccess).not.toHaveBeenCalled();
     expect(body).toContain('"humanAuditQuota":{"limit":3,"used":1,"remaining":2');
+  });
+
+  it("consumes one reserved paid entitlement after a successful audit", async () => {
+    const dependencies = baseDependencies();
+    const paidAccess = {
+      allowed: true as const,
+      access: {
+        accessType: "paid" as const,
+        entitlement: {
+          entitlementId: "entitlement-1",
+          reservationToken: "paid-token",
+        },
+      },
+      usage: {
+        free: { limit: 3, used: 3, remaining: 0, nextAvailableAt: null },
+        paid: { available: 0 },
+        canStartAudit: true,
+      },
+    };
+    dependencies.reserveAccess.mockResolvedValue(paidAccess);
+    dependencies.completeAccess.mockResolvedValue({
+      free: paidAccess.usage.free,
+      paid: { available: 0 },
+      canStartAudit: false,
+    });
+    const handler = createInvestigateHandler({
+      ...dependencies,
+      runAudit: vi.fn(async () => ({ reportId: "paid-report" })) as never,
+    });
+
+    const response = await handler(request({ url: "https://example.com" }));
+    await response.text();
+
+    expect(dependencies.completeAccess).toHaveBeenCalledWith(
+      "visitor-hash",
+      paidAccess.access,
+      "paid-report"
+    );
+    expect(dependencies.releaseAccess).not.toHaveBeenCalled();
   });
 
   it("blocks the fourth new audit before engine execution", async () => {
     const dependencies = baseDependencies();
-    const reserveQuota = vi.fn(async () => ({
+    const reserveAccess = vi.fn(async () => ({
       allowed: false as const,
-      reason: "quota_exhausted" as const,
-      quota: {
-        limit: 3,
-        used: 3,
-        remaining: 0,
-        nextAvailableAt: "2026-08-04T10:00:00.000Z",
+      reason: "payment_required" as const,
+      usage: {
+        free: {
+          limit: 3,
+          used: 3,
+          remaining: 0,
+          nextAvailableAt: "2026-08-04T10:00:00.000Z",
+        },
+        paid: { available: 0 },
+        canStartAudit: false,
       },
     }));
     const runAudit = vi.fn();
     const handler = createInvestigateHandler({
       ...dependencies,
-      reserveQuota,
+      reserveAccess,
       runAudit: runAudit as never,
     });
 
@@ -90,11 +137,12 @@ describe("POST /api/engine/investigate human quota", () => {
 
     expect(response.status).toBe(429);
     expect(payload).toMatchObject({
-      error: "HUMAN_AUDIT_QUOTA_EXHAUSTED",
+      error: "HUMAN_AUDIT_PAYMENT_REQUIRED",
       quota: { used: 3, remaining: 0 },
+      usage: { paid: { available: 0 }, canStartAudit: false },
     });
     expect(runAudit).not.toHaveBeenCalled();
-    expect(dependencies.commitQuota).not.toHaveBeenCalled();
+    expect(dependencies.completeAccess).not.toHaveBeenCalled();
   });
 
   it("does not reserve quota for an invalid request body", async () => {
@@ -103,7 +151,7 @@ describe("POST /api/engine/investigate human quota", () => {
     const response = await handler(request({ visitorId: "client-forged" }));
 
     expect(response.status).toBe(400);
-    expect(dependencies.reserveQuota).not.toHaveBeenCalled();
+    expect(dependencies.reserveAccess).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -124,10 +172,10 @@ describe("POST /api/engine/investigate human quota", () => {
     const response = await handler(request({ url: "not-a-valid-url" }));
     await response.text();
 
-    expect(dependencies.commitQuota).not.toHaveBeenCalled();
-    expect(dependencies.releaseQuota).toHaveBeenCalledWith(
+    expect(dependencies.completeAccess).not.toHaveBeenCalled();
+    expect(dependencies.releaseAccess).toHaveBeenCalledWith(
       "visitor-hash",
-      "reservation-token"
+      AVAILABLE.access
     );
   });
 });

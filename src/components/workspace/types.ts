@@ -8,6 +8,7 @@ import type { EvidenceBudgetUsage } from "@/lib/audit/evidenceTrace";
 import type { EvidenceGatherStopReason } from "@/lib/audit/gather";
 import type { PublicAuditQaMetadata } from "@/lib/conversation/auditAnswer";
 import type { HumanAuditQuotaState } from "@/lib/humanAuditQuotaContract";
+import type { HumanAuditUsageState } from "@/lib/humanAuditUsageContract";
 
 export type PillarScore = {
   score?: number;
@@ -37,6 +38,7 @@ export type AuditSummary = {
     stopReason: EvidenceGatherStopReason;
   };
   humanAuditQuota?: HumanAuditQuotaState;
+  humanAuditUsage?: HumanAuditUsageState;
   company_name?: string;
   score_interpretation?: string;
   the_verdict?: {

@@ -3,11 +3,10 @@ import { createUsageHandler } from "./route";
 
 describe("GET /api/usage", () => {
   it("returns only safe quota state and establishes the visitor cookie", async () => {
-    const getQuota = vi.fn(async () => ({
-      limit: 3,
-      used: 1,
-      remaining: 2,
-      nextAvailableAt: null,
+    const getUsage = vi.fn(async () => ({
+      free: { limit: 3, used: 1, remaining: 2, nextAvailableAt: null },
+      paid: { available: 1 },
+      canStartAudit: true,
     }));
     const handler = createUsageHandler({
       resolveVisitor: () => ({
@@ -15,7 +14,7 @@ describe("GET /api/usage", () => {
         setCookieHeader:
           "verdict_anonymous_visitor=signed; Path=/; HttpOnly; SameSite=Lax; Secure",
       }),
-      getQuota,
+      getUsage,
     });
 
     const response = await handler(
@@ -23,12 +22,13 @@ describe("GET /api/usage", () => {
     );
     expect(response.status).toBe(200);
     expect(response.headers.get("set-cookie")).toContain("HttpOnly");
-    expect(await response.json()).toEqual({
-      limit: 3,
-      used: 1,
-      remaining: 2,
-      nextAvailableAt: null,
+    const payload = await response.json();
+    expect(payload).toEqual({
+      free: { limit: 3, used: 1, remaining: 2, nextAvailableAt: null },
+      paid: { available: 1 },
+      canStartAudit: true,
     });
-    expect(getQuota).toHaveBeenCalledWith("private-redis-identity");
+    expect(JSON.stringify(payload)).not.toMatch(/entitlementId|visitor|settlement/i);
+    expect(getUsage).toHaveBeenCalledWith("private-redis-identity");
   });
 });
