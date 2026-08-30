@@ -35,6 +35,10 @@ import type {
   AuditModelObserver,
   AuditRunModelProvenance,
 } from "@/lib/audit/model";
+import {
+  isSanitizedModelAvailabilityError,
+  MODEL_TEMPORARILY_UNAVAILABLE_CODE,
+} from "@/lib/audit/publicError";
 
 export type { AuditBudget } from "@/lib/audit/evidence";
 
@@ -211,10 +215,9 @@ export async function runVerdictAudit(
       },
     };
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
     const safeError =
-      message === "MODEL_HIGH_DEMAND"
-        ? "MODEL_HIGH_DEMAND"
+      isSanitizedModelAvailabilityError(error)
+        ? MODEL_TEMPORARILY_UNAVAILABLE_CODE
         : error instanceof ScrapingError
           ? "SCRAPING_FAILED"
           : "AUDIT_FAILED";

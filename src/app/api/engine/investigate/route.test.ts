@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createInvestigateHandler } from "./route";
 import type { HumanAuditAccessDecision } from "@/lib/humanAuditAccess";
+import { GeminiAvailabilityError } from "@/lib/audit/model";
+import { MODEL_TEMPORARILY_UNAVAILABLE_MESSAGE } from "@/lib/audit/publicError";
 
 const AVAILABLE = {
   allowed: true as const,
@@ -157,7 +159,6 @@ describe("POST /api/engine/investigate human quota", () => {
   it.each([
     ["invalid URL", Object.assign(new Error("Blocked URL"), { name: "UnsafeUrlError" })],
     ["scraping failure", new Error("SCRAPING_FAILED")],
-    ["Gemini failure", new Error("MODEL_HIGH_DEMAND")],
     ["unexpected failure", new Error("UNEXPECTED")],
   ])("releases the reservation after %s", async (_label, failure) => {
     const dependencies = baseDependencies();
@@ -176,6 +177,64 @@ describe("POST /api/engine/investigate human quota", () => {
     expect(dependencies.releaseAccess).toHaveBeenCalledWith(
       "visitor-hash",
       AVAILABLE.access
+    );
+  });
+
+  it("releases free access and returns only sanitized model-availability copy", async () => {
+    const dependencies = baseDependencies();
+    const handler = createInvestigateHandler({
+      ...dependencies,
+      runAudit: vi.fn(async () => {
+        throw new GeminiAvailabilityError("unavailable");
+      }) as never,
+    });
+
+    const response = await handler(request({ url: "https://example.com" }));
+    const body = await response.text();
+
+    expect(dependencies.completeAccess).not.toHaveBeenCalled();
+    expect(dependencies.releaseAccess).toHaveBeenCalledWith(
+      "visitor-hash",
+      AVAILABLE.access
+    );
+    expect(body).toContain(MODEL_TEMPORARILY_UNAVAILABLE_MESSAGE);
+    expect(body).not.toMatch(
+      /MODEL_HIGH_DEMAND|RESOURCE_EXHAUSTED|UNAVAILABLE|gemini|google/i
+    );
+  });
+
+  it("releases a paid entitlement reservation when all model tiers are unavailable", async () => {
+    const dependencies = baseDependencies();
+    const paidAccess = {
+      allowed: true as const,
+      access: {
+        accessType: "paid" as const,
+        entitlement: {
+          entitlementId: "entitlement-1",
+          reservationToken: "paid-token",
+        },
+      },
+      usage: {
+        free: { limit: 3, used: 3, remaining: 0, nextAvailableAt: null },
+        paid: { available: 0 },
+        canStartAudit: true,
+      },
+    };
+    dependencies.reserveAccess.mockResolvedValue(paidAccess);
+    const handler = createInvestigateHandler({
+      ...dependencies,
+      runAudit: vi.fn(async () => {
+        throw new GeminiAvailabilityError("rate_limited");
+      }) as never,
+    });
+
+    const response = await handler(request({ url: "https://example.com" }));
+    await response.text();
+
+    expect(dependencies.completeAccess).not.toHaveBeenCalled();
+    expect(dependencies.releaseAccess).toHaveBeenCalledWith(
+      "visitor-hash",
+      paidAccess.access
     );
   });
 });

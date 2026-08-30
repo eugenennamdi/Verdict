@@ -13,6 +13,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createAuthorizedAuditHandler } from "@/app/api/v2/audit/route";
 import type { RunVerdictAuditResult } from "@/lib/audit/runVerdictAudit";
 import { ScrapingError } from "@/lib/engine";
+import { GeminiAvailabilityError } from "@/lib/audit/model";
 import {
   protectVerdictAuditRoute,
   type VerdictX402Config,
@@ -283,6 +284,23 @@ describe("POST /api/v2/audit", () => {
     expect(response.headers.get("PAYMENT-RESPONSE")).toBeNull();
     expect(facilitator.verifyCalls).toBe(1);
     expect(facilitator.settleCalls).toBe(0);
+  });
+
+  it("keeps the public API schema stable for exhausted model availability", async () => {
+    const runAudit = vi.fn(async () => {
+      throw new GeminiAvailabilityError("unavailable");
+    });
+    const response = await createAuthorizedAuditHandler({ runAudit })(
+      request({ url: "https://example.com" })
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "AUDIT_TEMPORARILY_UNAVAILABLE",
+        message: "The audit service is temporarily unavailable",
+      },
+    });
   });
 
   it("rejects an invalid URL after authorization without running or settling", async () => {

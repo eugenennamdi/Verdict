@@ -3,7 +3,10 @@ import { ThinkingLevel } from "@google/genai";
 import {
   AUDIT_MODEL,
   FALLBACK_AUDIT_MODEL,
+  HEAVY_TERTIARY_AUDIT_MODEL,
+  LIGHT_TERTIARY_AUDIT_MODEL,
   PRIMARY_AUDIT_MODEL,
+  TERTIARY_AUDIT_MODELS,
   AUDIT_THINKING_LEVELS,
   classifyTransientGeminiAvailabilityError,
   createAuditGenerationConfig,
@@ -15,6 +18,14 @@ describe("Gemini audit model configuration", () => {
     expect(AUDIT_MODEL).toBe("gemini-3.7-flash");
     expect(PRIMARY_AUDIT_MODEL).toBe("gemini-3.7-flash");
     expect(FALLBACK_AUDIT_MODEL).toBe("gemini-3.6-flash");
+    expect(LIGHT_TERTIARY_AUDIT_MODEL).toBe("gemini-3.5-flash-lite");
+    expect(HEAVY_TERTIARY_AUDIT_MODEL).toBe("gemini-3.5-flash");
+    expect(TERTIARY_AUDIT_MODELS).toEqual({
+      normalization: "gemini-3.5-flash-lite",
+      planner: "gemini-3.5-flash-lite",
+      grader: "gemini-3.5-flash",
+      qa: "gemini-3.5-flash",
+    });
     expect(AUDIT_THINKING_LEVELS).toEqual({
       normalization: ThinkingLevel.LOW,
       planner: ThinkingLevel.LOW,
@@ -59,6 +70,7 @@ describe("Gemini audit model configuration", () => {
     expect(result.metadata).toEqual({
       requestedPrimaryModel: "gemini-3.7-flash",
       modelUsed: "gemini-3.7-flash",
+      tier: "primary",
       fallbackUsed: false,
     });
   });
@@ -85,10 +97,81 @@ describe("Gemini audit model configuration", () => {
       metadata: {
         requestedPrimaryModel: "gemini-3.7-flash",
         modelUsed: "gemini-3.6-flash",
+        tier: "secondary",
         fallbackUsed: true,
         availabilityErrorCategory: "unavailable",
       },
     });
+  });
+
+  it.each([
+    ["normalization", "gemini-3.5-flash-lite"],
+    ["planner", "gemini-3.5-flash-lite"],
+    ["grader", "gemini-3.5-flash"],
+    ["qa", "gemini-3.5-flash"],
+  ] as const)(
+    "uses the bounded task-specific tertiary hierarchy for %s",
+    async (task, tertiaryModel) => {
+      const generate = vi
+        .fn()
+        .mockRejectedValueOnce({ status: 503 })
+        .mockRejectedValueOnce({ status: 503 })
+        .mockRejectedValueOnce({ status: 503 })
+        .mockResolvedValueOnce("tertiary result");
+
+      const result = await runAuditModelWithAvailabilityFailover({
+        task,
+        generate,
+      });
+
+      expect(generate.mock.calls.map(([model]) => model)).toEqual([
+        "gemini-3.7-flash",
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+        tertiaryModel,
+      ]);
+      expect(result.metadata).toMatchObject({
+        modelUsed: tertiaryModel,
+        tier: "tertiary",
+        fallbackUsed: true,
+      });
+    }
+  );
+
+  it("does not call tertiary after secondary succeeds", async () => {
+    const generate = vi
+      .fn()
+      .mockRejectedValueOnce({ status: 503 })
+      .mockRejectedValueOnce({ status: 503 })
+      .mockResolvedValueOnce("secondary result");
+
+    const result = await runAuditModelWithAvailabilityFailover({
+      task: "grader",
+      generate,
+    });
+
+    expect(generate.mock.calls.map(([model]) => model)).toEqual([
+      "gemini-3.7-flash",
+      "gemini-3.7-flash",
+      "gemini-3.6-flash",
+    ]);
+    expect(result.metadata.tier).toBe("secondary");
+  });
+
+  it("does not invoke tertiary for an ineligible secondary failure", async () => {
+    const schemaError = Object.assign(new Error("Malformed response schema"), {
+      status: 400,
+    });
+    const generate = vi
+      .fn()
+      .mockRejectedValueOnce({ status: 503 })
+      .mockRejectedValueOnce({ status: 503 })
+      .mockRejectedValueOnce(schemaError);
+
+    await expect(
+      runAuditModelWithAvailabilityFailover({ task: "grader", generate })
+    ).rejects.toBe(schemaError);
+    expect(generate).toHaveBeenCalledTimes(3);
   });
 
   it("recognizes structured availability statuses without treating ordinary 4xx as eligible", () => {
@@ -132,10 +215,10 @@ describe("Gemini audit model configuration", () => {
       runAuditModelWithAvailabilityFailover({ task: "grader", generate })
     ).rejects.toMatchObject({
       name: "GeminiAvailabilityError",
-      message: "MODEL_HIGH_DEMAND",
+      message: "MODEL_TEMPORARILY_UNAVAILABLE",
       category: "unavailable",
     });
-    expect(generate).toHaveBeenCalledTimes(3);
+    expect(generate).toHaveBeenCalledTimes(4);
   });
 
   it("does not start another model attempt after an operation deadline closes", async () => {
@@ -150,7 +233,7 @@ describe("Gemini audit model configuration", () => {
         canAttempt: () => false,
       })
     ).rejects.toMatchObject({
-      message: "MODEL_HIGH_DEMAND",
+      message: "MODEL_TEMPORARILY_UNAVAILABLE",
       category: "timeout",
     });
     expect(generate).toHaveBeenCalledOnce();

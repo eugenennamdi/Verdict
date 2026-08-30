@@ -2,6 +2,10 @@ export const maxDuration = 300;
 import { NextResponse } from 'next/dist/server/web/spec-extension/response';
 import { extractContext, generateAudit } from '@/lib/engine';
 import { redis } from '@/lib/redis';
+import {
+  isSanitizedModelAvailabilityError,
+  publicInvestigationErrorMessage,
+} from '@/lib/audit/publicError';
 
 export async function POST(req: Request) {
   try {
@@ -63,10 +67,14 @@ export async function POST(req: Request) {
     });
 
   } catch (error: unknown) {
-    console.error('[API v1] Audit Error:', error);
-    
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const statusCode = errorMessage.includes('MODEL_HIGH_DEMAND') ? 503 : 500;
+    const errorMessage = publicInvestigationErrorMessage(error);
+    const availabilityFailure = isSanitizedModelAvailabilityError(error);
+    if (availabilityFailure) {
+      console.error('[API v1] Analysis service temporarily unavailable');
+    } else {
+      console.error('[API v1] Audit Error:', error);
+    }
+    const statusCode = availabilityFailure ? 503 : 500;
     
     return NextResponse.json({ 
       success: false,

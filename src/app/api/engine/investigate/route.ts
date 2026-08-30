@@ -23,6 +23,10 @@ import {
 import { humanAuditQuotaExhaustedMessage } from "@/lib/humanAuditQuotaContract";
 import { redis } from "@/lib/redis";
 import { ScrapingError } from "@/lib/engine";
+import {
+  isSanitizedModelAvailabilityError,
+  publicInvestigationErrorMessage,
+} from "@/lib/audit/publicError";
 
 const ABUSE_RATE_LIMIT = 10;
 const ABUSE_RATE_WINDOW_SECONDS = 10 * 60;
@@ -206,9 +210,11 @@ export function createInvestigateHandler(
               console.error("Human audit quota reservation release failed");
             }
           }
-          const message = error instanceof Error ? error.message : String(error);
+          const message = publicInvestigationErrorMessage(error);
           const name = error instanceof Error ? error.name : "";
-          if (!(error instanceof ScrapingError) && name !== "UnsafeUrlError") {
+          if (isSanitizedModelAvailabilityError(error)) {
+            console.error("Investigation analysis service temporarily unavailable");
+          } else if (!(error instanceof ScrapingError) && name !== "UnsafeUrlError") {
             console.error("Investigate Error:", error);
           }
           try {

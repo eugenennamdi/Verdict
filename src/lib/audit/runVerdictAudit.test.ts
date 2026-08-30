@@ -15,7 +15,12 @@ type GradeMock = (
       task: "normalization" | "planner" | "grader" | "qa",
       metadata: {
         requestedPrimaryModel: "gemini-3.7-flash";
-        modelUsed: "gemini-3.7-flash" | "gemini-3.6-flash";
+        modelUsed:
+          | "gemini-3.7-flash"
+          | "gemini-3.6-flash"
+          | "gemini-3.5-flash-lite"
+          | "gemini-3.5-flash";
+        tier: "primary" | "secondary" | "tertiary";
         fallbackUsed: boolean;
       }
     ) => void;
@@ -63,6 +68,7 @@ const mocks = vi.hoisted(() => ({
     options?.onModelResult?.("normalization", {
       requestedPrimaryModel: "gemini-3.7-flash",
       modelUsed: "gemini-3.7-flash",
+      tier: "primary",
       fallbackUsed: false,
     });
     return {
@@ -76,6 +82,7 @@ const mocks = vi.hoisted(() => ({
     options?.onModelResult?.("grader", {
       requestedPrimaryModel: "gemini-3.7-flash",
       modelUsed: "gemini-3.6-flash",
+      tier: "secondary",
       fallbackUsed: true,
     });
     return {
@@ -186,12 +193,14 @@ describe("runVerdictAudit homepage-only regression", () => {
       normalization: {
         requestedPrimaryModel: "gemini-3.7-flash",
         modelUsed: "gemini-3.7-flash",
+        tier: "primary",
         fallbackUsed: false,
       },
       planner: [],
       grader: {
         requestedPrimaryModel: "gemini-3.7-flash",
         modelUsed: "gemini-3.6-flash",
+        tier: "secondary",
         fallbackUsed: true,
       },
     });
@@ -295,7 +304,7 @@ describe("runVerdictAudit homepage-only regression", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "audit.failed",
-      data: { error: "AUDIT_FAILED" },
+      data: { error: "MODEL_TEMPORARILY_UNAVAILABLE" },
     });
     expect(JSON.stringify(events)).not.toContain("provider unavailable raw body");
   });

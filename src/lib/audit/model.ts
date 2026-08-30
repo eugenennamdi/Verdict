@@ -1,14 +1,21 @@
 import { ThinkingLevel } from "@google/genai";
+import { MODEL_TEMPORARILY_UNAVAILABLE_CODE } from "@/lib/audit/publicError";
 
 export const PRIMARY_AUDIT_MODEL = "gemini-3.7-flash";
 export const FALLBACK_AUDIT_MODEL = "gemini-3.6-flash";
+export const LIGHT_TERTIARY_AUDIT_MODEL = "gemini-3.5-flash-lite";
+export const HEAVY_TERTIARY_AUDIT_MODEL = "gemini-3.5-flash";
 
 /** Backwards-compatible canonical model alias. */
 export const AUDIT_MODEL = PRIMARY_AUDIT_MODEL;
 
 export type AuditModel =
   | typeof PRIMARY_AUDIT_MODEL
-  | typeof FALLBACK_AUDIT_MODEL;
+  | typeof FALLBACK_AUDIT_MODEL
+  | typeof LIGHT_TERTIARY_AUDIT_MODEL
+  | typeof HEAVY_TERTIARY_AUDIT_MODEL;
+
+export type AuditModelTier = "primary" | "secondary" | "tertiary";
 
 export type GeminiAvailabilityErrorCategory =
   | "high_demand"
@@ -19,6 +26,7 @@ export type GeminiAvailabilityErrorCategory =
 export type AuditModelExecutionMetadata = {
   requestedPrimaryModel: typeof PRIMARY_AUDIT_MODEL;
   modelUsed: AuditModel;
+  tier: AuditModelTier;
   fallbackUsed: boolean;
   availabilityErrorCategory?: GeminiAvailabilityErrorCategory;
 };
@@ -31,6 +39,15 @@ export const AUDIT_THINKING_LEVELS = Object.freeze({
 });
 
 export type AuditModelTask = keyof typeof AUDIT_THINKING_LEVELS;
+
+export const TERTIARY_AUDIT_MODELS: Readonly<
+  Record<AuditModelTask, AuditModel>
+> = Object.freeze({
+  normalization: LIGHT_TERTIARY_AUDIT_MODEL,
+  planner: LIGHT_TERTIARY_AUDIT_MODEL,
+  grader: HEAVY_TERTIARY_AUDIT_MODEL,
+  qa: HEAVY_TERTIARY_AUDIT_MODEL,
+});
 
 export type AuditModelObserver = (
   task: AuditModelTask,
@@ -47,7 +64,7 @@ export class GeminiAvailabilityError extends Error {
   readonly category: GeminiAvailabilityErrorCategory;
 
   constructor(category: GeminiAvailabilityErrorCategory) {
-    super("MODEL_HIGH_DEMAND");
+    super(MODEL_TEMPORARILY_UNAVAILABLE_CODE);
     this.name = "GeminiAvailabilityError";
     this.category = category;
   }
@@ -128,32 +145,26 @@ export async function runAuditModelWithAvailabilityFailover<T>(input: {
 }): Promise<{ value: T; metadata: AuditModelExecutionMetadata }> {
   let availabilityErrorCategory: GeminiAvailabilityErrorCategory | undefined;
 
-  for (let primaryAttempt = 0; primaryAttempt < 2; primaryAttempt++) {
-    try {
-      const value = await input.generate(PRIMARY_AUDIT_MODEL);
-      const metadata: AuditModelExecutionMetadata = {
-        requestedPrimaryModel: PRIMARY_AUDIT_MODEL,
-        modelUsed: PRIMARY_AUDIT_MODEL,
-        fallbackUsed: false,
-        ...(availabilityErrorCategory ? { availabilityErrorCategory } : {}),
-      };
-      input.onResult?.(input.task, metadata);
-      return { value, metadata };
-    } catch (error) {
-      const category = classifyTransientGeminiAvailabilityError(error);
-      if (!category) throw error;
-      availabilityErrorCategory = category;
-      if (primaryAttempt === 0) {
-        if (input.canAttempt?.() === false) {
-          throw new GeminiAvailabilityError(category);
-        }
-        console.warn("[Gemini] Primary audit model unavailable; retrying once", {
-          task: input.task,
-          model: PRIMARY_AUDIT_MODEL,
-          category,
-        });
-      }
-    }
+  const metadataFor = (
+    modelUsed: AuditModel,
+    tier: AuditModelTier
+  ): AuditModelExecutionMetadata => ({
+    requestedPrimaryModel: PRIMARY_AUDIT_MODEL,
+    modelUsed,
+    tier,
+    fallbackUsed: tier !== "primary",
+    ...(availabilityErrorCategory ? { availabilityErrorCategory } : {}),
+  });
+
+  try {
+    const value = await input.generate(PRIMARY_AUDIT_MODEL);
+    const metadata = metadataFor(PRIMARY_AUDIT_MODEL, "primary");
+    input.onResult?.(input.task, metadata);
+    return { value, metadata };
+  } catch (error) {
+    const category = classifyTransientGeminiAvailabilityError(error);
+    if (!category) throw error;
+    availabilityErrorCategory = category;
   }
 
   if (input.canAttempt?.() === false) {
@@ -162,21 +173,62 @@ export async function runAuditModelWithAvailabilityFailover<T>(input: {
     );
   }
 
-  console.warn("[Gemini] Primary retry unavailable; using availability fallback", {
+  console.warn("[Gemini] Primary audit model unavailable; retrying once", {
     task: input.task,
-    primaryModel: PRIMARY_AUDIT_MODEL,
-    fallbackModel: FALLBACK_AUDIT_MODEL,
+    model: PRIMARY_AUDIT_MODEL,
+    category: availabilityErrorCategory,
+  });
+
+  try {
+    const value = await input.generate(PRIMARY_AUDIT_MODEL);
+    const metadata = metadataFor(PRIMARY_AUDIT_MODEL, "primary");
+    input.onResult?.(input.task, metadata);
+    return { value, metadata };
+  } catch (error) {
+    const category = classifyTransientGeminiAvailabilityError(error);
+    if (!category) throw error;
+    availabilityErrorCategory = category;
+  }
+
+  if (input.canAttempt?.() === false) {
+    throw new GeminiAvailabilityError(
+      availabilityErrorCategory ?? "unavailable"
+    );
+  }
+
+  console.warn("[Gemini] Primary retry unavailable; using secondary model", {
+    task: input.task,
+    model: FALLBACK_AUDIT_MODEL,
     category: availabilityErrorCategory,
   });
 
   try {
     const value = await input.generate(FALLBACK_AUDIT_MODEL);
-    const metadata: AuditModelExecutionMetadata = {
-      requestedPrimaryModel: PRIMARY_AUDIT_MODEL,
-      modelUsed: FALLBACK_AUDIT_MODEL,
-      fallbackUsed: true,
-      ...(availabilityErrorCategory ? { availabilityErrorCategory } : {}),
-    };
+    const metadata = metadataFor(FALLBACK_AUDIT_MODEL, "secondary");
+    input.onResult?.(input.task, metadata);
+    return { value, metadata };
+  } catch (error) {
+    const category = classifyTransientGeminiAvailabilityError(error);
+    if (!category) throw error;
+    availabilityErrorCategory = category;
+  }
+
+  if (input.canAttempt?.() === false) {
+    throw new GeminiAvailabilityError(
+      availabilityErrorCategory ?? "unavailable"
+    );
+  }
+
+  const tertiaryModel = TERTIARY_AUDIT_MODELS[input.task];
+  console.warn("[Gemini] Secondary audit model unavailable; using tertiary model", {
+    task: input.task,
+    model: tertiaryModel,
+    category: availabilityErrorCategory,
+  });
+
+  try {
+    const value = await input.generate(tertiaryModel);
+    const metadata = metadataFor(tertiaryModel, "tertiary");
     input.onResult?.(input.task, metadata);
     return { value, metadata };
   } catch (error) {

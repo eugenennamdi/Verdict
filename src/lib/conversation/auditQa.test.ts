@@ -45,6 +45,7 @@ describe("grounded Gemini audit Q&A", () => {
     expect(answer.modelProvenance).toEqual({
       requestedPrimaryModel: "gemini-3.7-flash",
       modelUsed: "gemini-3.7-flash",
+      tier: "primary",
       fallbackUsed: false,
     });
     for (const key of [
@@ -92,10 +93,48 @@ describe("grounded Gemini audit Q&A", () => {
     );
     expect(answer.modelProvenance).toMatchObject({
       modelUsed: "gemini-3.6-flash",
+      tier: "secondary",
       fallbackUsed: true,
       availabilityErrorCategory: "unavailable",
     });
     expect(answer.citations).toEqual(["S2"]);
+  });
+
+  it("uses Gemini 3.5 Flash once as the medium-thinking Q&A tertiary", async () => {
+    const loaded = makeLoadedAuditContext();
+    const generate = vi
+      .fn<AuditQaGenerator>()
+      .mockRejectedValueOnce({ status: 503 })
+      .mockRejectedValueOnce({ status: 503 })
+      .mockRejectedValueOnce({ status: 503 })
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          answer: "The pricing evidence supports the judgment. [S2]",
+          citations: ["S2"],
+          answerType: "score_explanation",
+          confidence: "high",
+          limitations: [],
+        })
+      );
+
+    const answer = await answerGroundedAuditQuestion(
+      { question: "Why did Conversion get that score?", loaded },
+      { generate }
+    );
+
+    expect(generate.mock.calls.map(([request]) => request.model)).toEqual([
+      "gemini-3.7-flash",
+      "gemini-3.7-flash",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash",
+    ]);
+    expect(generate.mock.calls[3][0].config).toEqual(
+      generate.mock.calls[0][0].config
+    );
+    expect(answer.modelProvenance).toMatchObject({
+      modelUsed: "gemini-3.5-flash",
+      tier: "tertiary",
+    });
   });
 
   it("retains valid citations and strips invented model citations", () => {

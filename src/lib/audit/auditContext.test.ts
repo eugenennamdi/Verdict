@@ -123,12 +123,14 @@ function buildContext() {
       normalization: {
         requestedPrimaryModel: "gemini-3.7-flash",
         modelUsed: "gemini-3.7-flash",
+        tier: "primary",
         fallbackUsed: false,
       },
       planner: [],
       grader: {
         requestedPrimaryModel: "gemini-3.7-flash",
         modelUsed: "gemini-3.6-flash",
+        tier: "secondary",
         fallbackUsed: true,
         availabilityErrorCategory: "unavailable",
       },
@@ -161,12 +163,14 @@ describe("AuditContextPackV1", () => {
         normalization: {
           requestedPrimaryModel: "gemini-3.7-flash",
           modelUsed: "gemini-3.7-flash",
+          tier: "primary",
           fallbackUsed: false,
         },
         planner: [],
         grader: {
           requestedPrimaryModel: "gemini-3.7-flash",
           modelUsed: "gemini-3.6-flash",
+          tier: "secondary",
           fallbackUsed: true,
           availabilityErrorCategory: "unavailable",
         },
