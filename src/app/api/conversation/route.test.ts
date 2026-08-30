@@ -102,6 +102,35 @@ describe("POST /api/conversation grounded audit routing", () => {
     expect(loaded.context.pillars.conversion.score).toBe(60);
   });
 
+  it("uses deterministic Q&A only after both bounded model paths are unavailable", async () => {
+    const loaded = makeLoadedAuditContext();
+    const qaGenerator = vi.fn(async (_request: { model: string }) => {
+      throw Object.assign(new Error("capacity unavailable"), { status: 503 });
+    });
+    const handler = createConversationHandler({
+      loadContext: async () => loaded,
+      qaGenerator,
+    });
+
+    const response = await handler(
+      request({
+        messages: [
+          { role: "user", content: "Why did Conversion get that score?" },
+        ],
+        activeReportId: REPORT_ID,
+      })
+    );
+    const payload = await response.json();
+
+    expect(qaGenerator.mock.calls.map(([request]) => request.model)).toEqual([
+      "gemini-3.7-flash",
+      "gemini-3.7-flash",
+      "gemini-3.6-flash",
+    ]);
+    expect(payload.message).toContain("Conversion scored **60/100**");
+    expect(payload.auditQa.citations).toEqual([]);
+  });
+
   it("keeps unrelated conversation on the existing DeepSeek path", async () => {
     const complete = vi.fn(async () => ({
       content: "I focus on startup growth investigations.",

@@ -42,6 +42,11 @@ describe("grounded Gemini audit Q&A", () => {
       systemInstruction: AUDIT_QA_SYSTEM_INSTRUCTION,
     });
     expect(answer.citations).toEqual(["S2"]);
+    expect(answer.modelProvenance).toEqual({
+      requestedPrimaryModel: "gemini-3.7-flash",
+      modelUsed: "gemini-3.7-flash",
+      fallbackUsed: false,
+    });
     for (const key of [
       "temperature",
       "topP",
@@ -51,6 +56,46 @@ describe("grounded Gemini audit Q&A", () => {
     ]) {
       expect(request.config).not.toHaveProperty(key);
     }
+  });
+
+  it("uses the same medium-thinking schema when transient failures require 3.6", async () => {
+    const loaded = makeLoadedAuditContext();
+    const generate = vi
+      .fn<AuditQaGenerator>()
+      .mockRejectedValueOnce(Object.assign(new Error("capacity"), { status: 503 }))
+      .mockRejectedValueOnce(Object.assign(new Error("capacity"), { status: 503 }))
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          answer: "The pricing evidence supports the conversion judgment. [S2]",
+          citations: ["S2"],
+          answerType: "score_explanation",
+          confidence: "high",
+          limitations: [],
+        })
+      );
+
+    const answer = await answerGroundedAuditQuestion(
+      { question: "Why did Conversion get that score?", loaded },
+      { generate }
+    );
+
+    expect(generate.mock.calls.map(([request]) => request.model)).toEqual([
+      "gemini-3.7-flash",
+      "gemini-3.7-flash",
+      "gemini-3.6-flash",
+    ]);
+    expect(generate.mock.calls[0][0].config).toEqual(
+      generate.mock.calls[2][0].config
+    );
+    expect(generate.mock.calls[2][0].config.thinkingConfig.thinkingLevel).toBe(
+      ThinkingLevel.MEDIUM
+    );
+    expect(answer.modelProvenance).toMatchObject({
+      modelUsed: "gemini-3.6-flash",
+      fallbackUsed: true,
+      availabilityErrorCategory: "unavailable",
+    });
+    expect(answer.citations).toEqual(["S2"]);
   });
 
   it("retains valid citations and strips invented model citations", () => {

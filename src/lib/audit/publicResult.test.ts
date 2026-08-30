@@ -58,6 +58,7 @@ describe("public audit result", () => {
       trace: [],
       evidenceTrace: {} as RunVerdictAuditResult["evidenceTrace"],
       auditContext: {} as RunVerdictAuditResult["auditContext"],
+      modelProvenance: { planner: [] },
     } as RunVerdictAuditResult;
 
     const summary = summarizeVerdictAuditResult(result);

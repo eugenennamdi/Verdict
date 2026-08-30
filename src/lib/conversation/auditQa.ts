@@ -2,8 +2,9 @@ import "server-only";
 
 import { GoogleGenAI, Type } from "@google/genai";
 import {
-  AUDIT_MODEL,
   createAuditGenerationConfig,
+  runAuditModelWithAvailabilityFailover,
+  type AuditModel,
 } from "@/lib/audit/model";
 import { GROWTH_READINESS_FRAMEWORK } from "@/lib/audit/score";
 import type { EvidenceSourceId } from "@/lib/audit/source";
@@ -88,7 +89,7 @@ export const AUDIT_QA_SCHEMA = {
 };
 
 type QaGenerationRequest = {
-  model: string;
+  model: AuditModel;
   contents: string;
   config: ReturnType<typeof createAuditGenerationConfig>;
 };
@@ -303,15 +304,20 @@ export async function answerGroundedAuditQuestion(
   options: { generate?: AuditQaGenerator } = {}
 ): Promise<AuditQaAnswer> {
   const contents = buildAuditQaPrompt(input);
-  const raw = await (options.generate ?? defaultGenerator)({
-    model: AUDIT_MODEL,
-    contents,
-    config: createAuditGenerationConfig(
-      "qa",
-      AUDIT_QA_SCHEMA,
-      AUDIT_QA_SYSTEM_INSTRUCTION
-    ),
+  const generate = options.generate ?? defaultGenerator;
+  const generated = await runAuditModelWithAvailabilityFailover({
+    task: "qa",
+    generate: (model) => generate({
+      model,
+      contents,
+      config: createAuditGenerationConfig(
+        "qa",
+        AUDIT_QA_SCHEMA,
+        AUDIT_QA_SYSTEM_INSTRUCTION
+      ),
+    }),
   });
+  const raw = generated.value;
 
   let parsed: unknown;
   try {
@@ -319,5 +325,8 @@ export async function answerGroundedAuditQuestion(
   } catch {
     throw new Error("AUDIT_QA_UNAVAILABLE");
   }
-  return sanitizeAuditQaResponse(parsed, input.loaded);
+  return {
+    ...sanitizeAuditQaResponse(parsed, input.loaded),
+    modelProvenance: generated.metadata,
+  };
 }

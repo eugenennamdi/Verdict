@@ -17,6 +17,7 @@ import {
   type EvidencePage,
 } from "@/lib/audit/evidence";
 import type { Tracer } from "@/lib/audit/events";
+import type { AuditModelObserver } from "@/lib/audit/model";
 import { orderedSuccessfulEvidencePages } from "@/lib/audit/source";
 import {
   deterministicEvidencePlan,
@@ -47,7 +48,10 @@ export type EvidenceGatherResult = {
 
 export type EvidenceGatherServices = {
   discover: (rootUrl: string, timeoutMs: number) => Promise<EvidenceCandidate[]>;
-  plan: (input: PlanEvidenceInput) => Promise<EvidencePlan>;
+  plan: (
+    input: PlanEvidenceInput,
+    options?: { onModelResult?: AuditModelObserver }
+  ) => Promise<EvidencePlan>;
   acquire: (input: AcquireEvidencePageInput) => Promise<EvidencePage>;
   now: () => number;
 };
@@ -59,6 +63,7 @@ export type GatherEvidenceInput = {
   budget?: Partial<AuditBudget>;
   startedAt?: number;
   tracer: Tracer;
+  onModelResult?: AuditModelObserver;
   services?: Partial<EvidenceGatherServices>;
 };
 
@@ -72,7 +77,7 @@ class GatherTimeoutError extends Error {
 const DEFAULT_SERVICES: EvidenceGatherServices = {
   discover: (rootUrl, timeoutMs) =>
     discoverInternalPages(rootUrl, { timeoutMs }),
-  plan: (input) => planEvidence(input),
+  plan: (input, options) => planEvidence(input, options),
   acquire: (input) => acquireEvidencePage(input),
   now: () => Date.now(),
 };
@@ -283,7 +288,12 @@ export async function gatherAuditEvidence(
 
     let plan: EvidencePlan;
     try {
-      plan = await withinGatherTime(services.plan(plannerInput), timeRemaining);
+      plan = await withinGatherTime(
+        services.plan(plannerInput, {
+          onModelResult: input.onModelResult,
+        }),
+        timeRemaining
+      );
     } catch (error) {
       if (error instanceof GatherTimeoutError) {
         return finish(

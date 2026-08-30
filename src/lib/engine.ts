@@ -4,8 +4,9 @@ import {
   type SemanticEvidenceDigest,
 } from '@/lib/audit/auditContext';
 import {
-  AUDIT_MODEL,
   createAuditGenerationConfig,
+  runAuditModelWithAvailabilityFailover,
+  type AuditModelObserver,
   type AuditModelTask,
 } from '@/lib/audit/model';
 import { computeOverallScore } from '@/lib/audit/score';
@@ -49,34 +50,36 @@ async function generateWithFallback(
   contents: string,
   schema: unknown,
   task: AuditModelTask,
-  systemInstruction: string
+  systemInstruction: string,
+  options: {
+    timeoutMs?: number;
+    deadlineAt?: number;
+    onModelResult?: AuditModelObserver;
+  } = {}
 ) {
-  const request = {
-    model: AUDIT_MODEL,
-    contents,
-    config: createAuditGenerationConfig(task, schema, systemInstruction),
-  };
-
-  try {
-    return await withTimeout(ai.models.generateContent(request), 20000);
-  } catch (e: unknown) {
-    const errorMsg = e instanceof Error ? e.message : String(e);
-    const isHighDemand = errorMsg.includes('503') || errorMsg.includes('high demand') || errorMsg.includes('UNAVAILABLE') || errorMsg.includes('429') || errorMsg.includes('TIMEOUT_ERROR');
-    
-    if (isHighDemand) {
-      console.warn(`[Engine] Audit model ${AUDIT_MODEL} unavailable/timed out; retrying once...`);
-      try {
-        return await withTimeout(ai.models.generateContent(request), 20000);
-      } catch (fallbackError: unknown) {
-        const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-        if (fallbackMsg.includes('503') || fallbackMsg.includes('high demand') || fallbackMsg.includes('UNAVAILABLE') || fallbackMsg.includes('429') || fallbackMsg.includes('TIMEOUT_ERROR')) {
-          throw new Error("MODEL_HIGH_DEMAND");
-        }
-        throw fallbackError;
-      }
-    }
-    throw e;
-  }
+  const result = await runAuditModelWithAvailabilityFailover({
+    task,
+    onResult: options.onModelResult,
+    canAttempt: options.deadlineAt
+      ? () => Date.now() < options.deadlineAt!
+      : undefined,
+    generate: (model) =>
+      withTimeout(
+        ai.models.generateContent({
+          model,
+          contents,
+          config: createAuditGenerationConfig(
+            task,
+            schema,
+            systemInstruction
+          ),
+        }),
+        options.deadlineAt
+          ? Math.max(1, options.deadlineAt - Date.now())
+          : options.timeoutMs ?? 20_000
+      ),
+  });
+  return result.value;
 }
 
 /**
@@ -86,19 +89,16 @@ async function generateWithFallback(
 export async function generateStructuredJson(
   prompt: string,
   schema: unknown,
-  timeoutMs: number
+  timeoutMs: number,
+  options: { onModelResult?: AuditModelObserver } = {}
 ): Promise<string> {
-  const response = await withTimeout(
-    ai.models.generateContent({
-      model: AUDIT_MODEL,
-      contents: prompt,
-      config: createAuditGenerationConfig(
-        "planner",
-        schema,
-        PLANNER_SYSTEM_INSTRUCTION
-      ),
-    }),
-    timeoutMs
+  const deadlineAt = Date.now() + timeoutMs;
+  const response = await generateWithFallback(
+    prompt,
+    schema,
+    "planner",
+    PLANNER_SYSTEM_INSTRUCTION,
+    { timeoutMs, deadlineAt, onModelResult: options.onModelResult }
   );
 
   if (!response.text) {
@@ -377,7 +377,10 @@ export async function fetchContext(
   return result.markdown;
 }
 
-export async function identifyFromMarkdown(markdownContext: string) {
+export async function identifyFromMarkdown(
+  markdownContext: string,
+  options: { onModelResult?: AuditModelObserver } = {}
+) {
   const prompt = `
 TASK:
 Determine whether the following untrusted website evidence represents a valid
@@ -395,7 +398,8 @@ ${markdownContext}
     prompt,
     extractSchema,
     "normalization",
-    UNTRUSTED_EVIDENCE_SYSTEM_INSTRUCTION
+    UNTRUSTED_EVIDENCE_SYSTEM_INSTRUCTION,
+    { onModelResult: options.onModelResult }
   );
 
   const resultText = aiResponse.text;
@@ -423,7 +427,11 @@ export async function extractContext(url: string, fallback_text?: string) {
   return identifyFromMarkdown(markdownContext);
 }
 
-export async function generateAudit(url: string, extractedContext: Record<string, unknown>) {
+export async function generateAudit(
+  url: string,
+  extractedContext: Record<string, unknown>,
+  options: { onModelResult?: AuditModelObserver } = {}
+) {
   const company_name = extractedContext.company_name as string;
   const inferred_description = extractedContext.inferred_description as string;
   const target_audience = extractedContext.target_audience as string;
@@ -464,7 +472,8 @@ Target Audience: ${target_audience}
     prompt,
     auditSchema,
     "grader",
-    UNTRUSTED_EVIDENCE_SYSTEM_INSTRUCTION
+    UNTRUSTED_EVIDENCE_SYSTEM_INSTRUCTION,
+    { onModelResult: options.onModelResult }
   );
 
   const resultText = aiResponse.text;
@@ -496,6 +505,7 @@ Target Audience: ${target_audience}
 
 export type GradeFromMarkdownOptions = {
   sources?: EvidenceSourceReference[];
+  onModelResult?: AuditModelObserver;
 };
 
 export async function gradeFromMarkdown(
@@ -544,7 +554,8 @@ ${markdownContext}
     prompt,
     fullAuditSchema,
     "grader",
-    UNTRUSTED_EVIDENCE_SYSTEM_INSTRUCTION
+    UNTRUSTED_EVIDENCE_SYSTEM_INSTRUCTION,
+    { onModelResult: options.onModelResult }
   );
 
   const resultText = aiResponse.text;

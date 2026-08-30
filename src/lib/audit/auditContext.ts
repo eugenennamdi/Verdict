@@ -15,6 +15,7 @@ import type {
   EvidenceSourceId,
   EvidenceSourceReference,
 } from "@/lib/audit/source";
+import type { AuditRunModelProvenance } from "@/lib/audit/model";
 
 export const VERDICT_ENGINE_VERSION = "1.0.0";
 
@@ -82,6 +83,7 @@ export type AuditContextPackV1 = {
   sources: AuditContextSource[];
   framework: typeof GROWTH_READINESS_FRAMEWORK;
   engineVersion: string;
+  models?: AuditRunModelProvenance;
 };
 
 type BuildAuditContextPackInput = {
@@ -97,6 +99,7 @@ type BuildAuditContextPackInput = {
   planningRounds: number;
   stopReason: EvidenceGatherStopReason;
   budgetUsage: EvidenceBudgetUsage;
+  models?: AuditRunModelProvenance;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -270,6 +273,17 @@ export function buildAuditContextPack(
     }),
     framework: GROWTH_READINESS_FRAMEWORK,
     engineVersion: VERDICT_ENGINE_VERSION,
+    ...(input.models ? {
+      models: {
+        ...(input.models.normalization
+          ? { normalization: { ...input.models.normalization } }
+          : {}),
+        planner: input.models.planner.map((item) => ({ ...item })),
+        ...(input.models.grader
+          ? { grader: { ...input.models.grader } }
+          : {}),
+      },
+    } : {}),
   };
 }
 

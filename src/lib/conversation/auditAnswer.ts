@@ -1,5 +1,6 @@
 import type { EvidenceCategory } from "@/lib/audit/evidence";
 import type { EvidenceSourceId } from "@/lib/audit/source";
+import type { AuditModelExecutionMetadata } from "@/lib/audit/model";
 
 export type AuditAnswerType =
   | "evidence"
@@ -20,6 +21,7 @@ export type AuditQaAnswer = {
   answerType: AuditAnswerType;
   confidence: AuditAnswerConfidence;
   limitations: string[];
+  modelProvenance?: AuditModelExecutionMetadata;
 };
 
 export type AuditAnswerSource = {
@@ -35,4 +37,3 @@ export type PublicAuditQaMetadata = {
   citations: AuditAnswerSource[];
   limitations: string[];
 };
-

@@ -99,6 +99,7 @@ function buildContext() {
       prompt: "SYSTEM_PROMPT_MUST_NOT_PERSIST",
       reasoning: "CHAIN_OF_THOUGHT_MUST_NOT_PERSIST",
       apiKey: "SECRET_VALUE_MUST_NOT_PERSIST",
+      providerError: "provider unavailable raw body",
     },
     overallScore: 70,
     sources,
@@ -118,6 +119,20 @@ function buildContext() {
     planningRounds: 1,
     stopReason: "no_selection",
     budgetUsage,
+    models: {
+      normalization: {
+        requestedPrimaryModel: "gemini-3.7-flash",
+        modelUsed: "gemini-3.7-flash",
+        fallbackUsed: false,
+      },
+      planner: [],
+      grader: {
+        requestedPrimaryModel: "gemini-3.7-flash",
+        modelUsed: "gemini-3.6-flash",
+        fallbackUsed: true,
+        availabilityErrorCategory: "unavailable",
+      },
+    },
   });
 }
 
@@ -142,6 +157,20 @@ describe("AuditContextPackV1", () => {
       },
       framework: GROWTH_READINESS_FRAMEWORK,
       engineVersion: VERDICT_ENGINE_VERSION,
+      models: {
+        normalization: {
+          requestedPrimaryModel: "gemini-3.7-flash",
+          modelUsed: "gemini-3.7-flash",
+          fallbackUsed: false,
+        },
+        planner: [],
+        grader: {
+          requestedPrimaryModel: "gemini-3.7-flash",
+          modelUsed: "gemini-3.6-flash",
+          fallbackUsed: true,
+          availabilityErrorCategory: "unavailable",
+        },
+      },
     });
     expect(context.framework.pillars).toEqual(PILLAR_WEIGHTS);
     expect(context.sources.map((source) => source.sourceId)).toEqual([
@@ -186,6 +215,7 @@ describe("AuditContextPackV1", () => {
       '"prompt"',
       '"reasoning"',
       '"apiKey"',
+      "provider unavailable raw body",
     ]) {
       expect(serialized).not.toContain(forbidden);
     }
