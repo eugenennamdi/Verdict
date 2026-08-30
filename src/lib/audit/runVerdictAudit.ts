@@ -19,13 +19,22 @@ import {
   gatherAuditEvidence,
   type EvidenceGatherStopReason,
 } from "@/lib/audit/gather";
+import {
+  buildAuditContextPack,
+  type AuditContextPackV1,
+} from "@/lib/audit/auditContext";
 import { persistReport } from "@/lib/audit/persist";
+import { assignEvidenceSourceIds } from "@/lib/audit/source";
 import {
   gradeFromMarkdown,
   identifyFromMarkdown,
   ScrapingError,
 } from "@/lib/engine";
 import { assertSafeAuditUrl } from "@/lib/security/url";
+import type {
+  AuditModelObserver,
+  AuditRunModelProvenance,
+} from "@/lib/audit/model";
 
 export type { AuditBudget } from "@/lib/audit/evidence";
 
@@ -57,6 +66,8 @@ export type RunVerdictAuditResult = {
   budgetUsage: EvidenceBudgetUsage;
   stopReason: EvidenceGatherStopReason;
   evidenceTrace: EvidenceTrace;
+  auditContext: AuditContextPackV1;
+  modelProvenance: AuditRunModelProvenance;
   investigation: {
     candidatesDiscovered: number;
     planningRounds: number;
@@ -71,6 +82,16 @@ export async function runVerdictAudit(
   const tracer = createTracer(input.onEvent);
   const persist = input.persist !== false;
   const budget = resolveAuditBudget(input.budget);
+  const modelProvenance: AuditRunModelProvenance = { planner: [] };
+  const onModelResult: AuditModelObserver = (task, metadata) => {
+    if (task === "planner") {
+      modelProvenance.planner.push({ ...metadata });
+    } else if (task === "normalization") {
+      modelProvenance.normalization = { ...metadata };
+    } else if (task === "grader") {
+      modelProvenance.grader = { ...metadata };
+    }
+  };
 
   try {
     const parsed = await assertSafeAuditUrl(input.url);
@@ -97,7 +118,7 @@ export async function runVerdictAudit(
       chars: homepage.chars,
     });
 
-    const extracted = await identifyFromMarkdown(markdown);
+    const extracted = await identifyFromMarkdown(markdown, { onModelResult });
     const identity: VerdictIdentity = {
       company_name: extracted.company_name || "Unknown",
       inferred_description: extracted.inferred_description || "",
@@ -115,11 +136,16 @@ export async function runVerdictAudit(
       budget,
       startedAt: gatherStartedAt,
       tracer,
+      onModelResult,
     });
+    const sources = assignEvidenceSourceIds(gathered.pages);
     const graderEvidence = combineEvidenceForGrading(gathered.pages, budget);
 
     tracer.emit("scoring.started");
-    const audit = await gradeFromMarkdown(parsed.href, graderEvidence);
+    const audit = await gradeFromMarkdown(parsed.href, graderEvidence, {
+      sources,
+      onModelResult,
+    });
     const overallScore = audit.overallScore;
     const evidenceTrace = serializeEvidenceTrace({
       pages: gathered.pages,
@@ -129,6 +155,20 @@ export async function runVerdictAudit(
       budget,
       stopReason: gathered.stopReason,
     });
+    let auditContext = buildAuditContextPack({
+      url: parsed.href,
+      auditTimestamp: new Date().toISOString(),
+      identity,
+      audit,
+      overallScore,
+      sources,
+      evidenceDigests: audit.evidenceDigests,
+      finalCoverage: gathered.coverage,
+      planningRounds: gathered.planningRounds,
+      stopReason: gathered.stopReason,
+      budgetUsage: evidenceTrace.budget,
+      models: modelProvenance,
+    });
 
     let reportId: string | undefined;
     if (persist) {
@@ -137,7 +177,9 @@ export async function runVerdictAudit(
         company_name: identity.company_name || audit.company_name || "Unknown",
         audit,
         evidenceTrace,
+        auditContext,
       });
+      auditContext = { ...auditContext, reportId };
       tracer.emit("report.persisted", undefined, { report_id: reportId });
     }
 
@@ -159,6 +201,8 @@ export async function runVerdictAudit(
       budgetUsage: evidenceTrace.budget,
       stopReason: gathered.stopReason,
       evidenceTrace,
+      auditContext,
+      modelProvenance,
       investigation: {
         candidatesDiscovered: gathered.candidatesDiscovered,
         planningRounds: gathered.planningRounds,
@@ -168,7 +212,13 @@ export async function runVerdictAudit(
     };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    tracer.emit("audit.failed", undefined, { error: message });
+    const safeError =
+      message === "MODEL_HIGH_DEMAND"
+        ? "MODEL_HIGH_DEMAND"
+        : error instanceof ScrapingError
+          ? "SCRAPING_FAILED"
+          : "AUDIT_FAILED";
+    tracer.emit("audit.failed", undefined, { error: safeError });
     throw error;
   }
 }

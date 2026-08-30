@@ -1,4 +1,4 @@
-export const PILLAR_WEIGHTS = {
+export const PILLAR_WEIGHTS = Object.freeze({
   positioning: 0.20,
   messaging: 0.15,
   website_ux: 0.15,
@@ -6,7 +6,13 @@ export const PILLAR_WEIGHTS = {
   trust: 0.10,
   competition: 0.10,
   growth_foundation: 0.15,
-} as const;
+} as const);
+
+export const GROWTH_READINESS_FRAMEWORK = Object.freeze({
+  id: "verdict-growth-readiness",
+  version: 1,
+  pillars: PILLAR_WEIGHTS,
+});
 
 export type PillarKey = keyof typeof PILLAR_WEIGHTS;
 

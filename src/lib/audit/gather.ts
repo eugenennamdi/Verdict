@@ -17,6 +17,8 @@ import {
   type EvidencePage,
 } from "@/lib/audit/evidence";
 import type { Tracer } from "@/lib/audit/events";
+import type { AuditModelObserver } from "@/lib/audit/model";
+import { orderedSuccessfulEvidencePages } from "@/lib/audit/source";
 import {
   deterministicEvidencePlan,
   planEvidence,
@@ -46,7 +48,10 @@ export type EvidenceGatherResult = {
 
 export type EvidenceGatherServices = {
   discover: (rootUrl: string, timeoutMs: number) => Promise<EvidenceCandidate[]>;
-  plan: (input: PlanEvidenceInput) => Promise<EvidencePlan>;
+  plan: (
+    input: PlanEvidenceInput,
+    options?: { onModelResult?: AuditModelObserver }
+  ) => Promise<EvidencePlan>;
   acquire: (input: AcquireEvidencePageInput) => Promise<EvidencePage>;
   now: () => number;
 };
@@ -58,6 +63,7 @@ export type GatherEvidenceInput = {
   budget?: Partial<AuditBudget>;
   startedAt?: number;
   tracer: Tracer;
+  onModelResult?: AuditModelObserver;
   services?: Partial<EvidenceGatherServices>;
 };
 
@@ -71,7 +77,7 @@ class GatherTimeoutError extends Error {
 const DEFAULT_SERVICES: EvidenceGatherServices = {
   discover: (rootUrl, timeoutMs) =>
     discoverInternalPages(rootUrl, { timeoutMs }),
-  plan: (input) => planEvidence(input),
+  plan: (input, options) => planEvidence(input, options),
   acquire: (input) => acquireEvidencePage(input),
   now: () => Date.now(),
 };
@@ -282,7 +288,12 @@ export async function gatherAuditEvidence(
 
     let plan: EvidencePlan;
     try {
-      plan = await withinGatherTime(services.plan(plannerInput), timeRemaining);
+      plan = await withinGatherTime(
+        services.plan(plannerInput, {
+          onModelResult: input.onModelResult,
+        }),
+        timeRemaining
+      );
     } catch (error) {
       if (error instanceof GatherTimeoutError) {
         return finish(
@@ -460,24 +471,21 @@ export function combineEvidenceForGrading(
   budgetOverrides: Partial<AuditBudget> = {}
 ): string {
   const budget = resolveAuditBudget(budgetOverrides);
-  const acquired = pages
-    .filter((page) => page.status === "acquired")
-    .sort((left, right) => {
-      if (left.role !== right.role) return left.role === "homepage" ? -1 : 1;
-      return left.url.localeCompare(right.url);
-    });
+  const acquired = orderedSuccessfulEvidencePages(pages);
   let combined = "";
 
   acquired.forEach((page, index) => {
     if (combined.length >= budget.maxEvidenceChars) return;
+    const sourceId = `S${index + 1}`;
     const block = [
-      `--- EVIDENCE PAGE ${index + 1} ---`,
+      `--- UNTRUSTED WEBSITE EVIDENCE ${sourceId} ---`,
+      `Source ID: ${sourceId}`,
       `Source: ${page.url}`,
       `Path: ${page.path}`,
       `Category: ${page.category ?? "unclassified"}`,
       "",
       page.markdown,
-      `--- END EVIDENCE PAGE ${index + 1} ---`,
+      `--- END UNTRUSTED WEBSITE EVIDENCE ${sourceId} ---`,
       "",
     ].join("\n");
     const remaining = budget.maxEvidenceChars - combined.length;

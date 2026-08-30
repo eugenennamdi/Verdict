@@ -8,7 +8,18 @@ type ContextFetcherMock = (
 
 type GradeMock = (
   url: string,
-  markdown: string
+  markdown: string,
+  options?: {
+    sources?: Array<{ sourceId: string; url: string }>;
+    onModelResult?: (
+      task: "normalization" | "planner" | "grader" | "qa",
+      metadata: {
+        requestedPrimaryModel: "gemini-3.7-flash";
+        modelUsed: "gemini-3.7-flash" | "gemini-3.6-flash";
+        fallbackUsed: boolean;
+      }
+    ) => void;
+  }
 ) => Promise<{
   company_name: string;
   overallScore: number;
@@ -16,6 +27,11 @@ type GradeMock = (
   pillars: Record<string, never>;
   the_verdict: Record<string, never>;
   priority_matrix: never[];
+  evidenceDigests: Array<{
+    sourceId: `S${number}`;
+    keyFindings: string[];
+    relevantSignals: string[];
+  }>;
 }>;
 
 type DiscoveryMock = () => Promise<
@@ -27,26 +43,51 @@ type DiscoveryMock = () => Promise<
   }>
 >;
 
+type IdentifyMock = (
+  markdown: string,
+  options?: Parameters<GradeMock>[2]
+) => Promise<{
+  company_name: string;
+  inferred_description: string;
+  target_audience: string;
+  primary_cta: string;
+}>;
+
 const mocks = vi.hoisted(() => ({
   assertSafeAuditUrl: vi.fn(async (raw: string) => new URL(raw)),
   fetchContextDetailed: vi.fn<ContextFetcherMock>(async () => ({
     markdown: "A sufficiently detailed homepage used as deterministic test evidence.",
     method: "firecrawl" as const,
   })),
-  identifyFromMarkdown: vi.fn(async () => ({
-    company_name: "Example",
-    inferred_description: "Example product",
-    target_audience: "Example teams",
-    primary_cta: "Start now",
-  })),
-  gradeFromMarkdown: vi.fn<GradeMock>(async () => ({
-    company_name: "Example",
-    overallScore: 73,
-    score_interpretation: "Ready",
-    pillars: {},
-    the_verdict: {},
-    priority_matrix: [],
-  })),
+  identifyFromMarkdown: vi.fn<IdentifyMock>(async (_markdown, options) => {
+    options?.onModelResult?.("normalization", {
+      requestedPrimaryModel: "gemini-3.7-flash",
+      modelUsed: "gemini-3.7-flash",
+      fallbackUsed: false,
+    });
+    return {
+      company_name: "Example",
+      inferred_description: "Example product",
+      target_audience: "Example teams",
+      primary_cta: "Start now",
+    };
+  }),
+  gradeFromMarkdown: vi.fn<GradeMock>(async (_url, _markdown, options) => {
+    options?.onModelResult?.("grader", {
+      requestedPrimaryModel: "gemini-3.7-flash",
+      modelUsed: "gemini-3.6-flash",
+      fallbackUsed: true,
+    });
+    return {
+      company_name: "Example",
+      overallScore: 73,
+      score_interpretation: "Ready",
+      pillars: {},
+      the_verdict: {},
+      priority_matrix: [],
+      evidenceDigests: [],
+    };
+  }),
   generateStructuredJson: vi.fn(async () => {
     throw new Error("planner unavailable");
   }),
@@ -129,8 +170,32 @@ describe("runVerdictAudit homepage-only regression", () => {
     expect(mocks.fetchContextDetailed).toHaveBeenCalledTimes(1);
     expect(mocks.persistReport).not.toHaveBeenCalled();
     expect(mocks.gradeFromMarkdown.mock.calls[0][1]).toContain(
-      "--- EVIDENCE PAGE 1 ---"
+      "--- UNTRUSTED WEBSITE EVIDENCE S1 ---"
     );
+    expect(mocks.gradeFromMarkdown.mock.calls[0][2]).toMatchObject({
+      sources: [
+        expect.objectContaining({
+          sourceId: "S1",
+          url: "https://example.com/",
+          role: "homepage",
+        }),
+      ],
+    });
+    expect(result.auditContext.sources[0].sourceId).toBe("S1");
+    expect(result.modelProvenance).toEqual({
+      normalization: {
+        requestedPrimaryModel: "gemini-3.7-flash",
+        modelUsed: "gemini-3.7-flash",
+        fallbackUsed: false,
+      },
+      planner: [],
+      grader: {
+        requestedPrimaryModel: "gemini-3.7-flash",
+        modelUsed: "gemini-3.6-flash",
+        fallbackUsed: true,
+      },
+    });
+    expect(result.auditContext.models).toEqual(result.modelProvenance);
   });
 
   it("continues to final grading when an additional page acquisition fails", async () => {
@@ -185,8 +250,16 @@ describe("runVerdictAudit homepage-only regression", () => {
           stopReason: "page_budget",
           coverage: result.finalCoverage,
         }),
+        auditContext: expect.objectContaining({
+          version: 1,
+          framework: expect.objectContaining({
+            id: "verdict-growth-readiness",
+          }),
+          models: result.modelProvenance,
+        }),
       })
     );
+    expect(result.auditContext.reportId).toBe("report-1");
     expect(JSON.stringify(mocks.persistReport.mock.calls[0][0])).not.toContain("markdown");
   });
 
@@ -203,5 +276,27 @@ describe("runVerdictAudit homepage-only regression", () => {
     expect(result.stopReason).toBe("discovery_failed");
     expect(result.trace.at(-1)?.type).toBe("audit.completed");
     expect(result.trace.some((item) => item.type === "audit.failed")).toBe(false);
+  });
+
+  it("keeps raw provider errors out of public activity events", async () => {
+    const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
+    mocks.gradeFromMarkdown.mockRejectedValueOnce(
+      new Error("provider unavailable raw body")
+    );
+
+    await expect(
+      runVerdictAudit({
+        url: "https://example.com",
+        persist: false,
+        budget: { maxPagesTotal: 1 },
+        onEvent: (event) => events.push(event),
+      })
+    ).rejects.toThrow("provider unavailable raw body");
+
+    expect(events.at(-1)).toMatchObject({
+      type: "audit.failed",
+      data: { error: "AUDIT_FAILED" },
+    });
+    expect(JSON.stringify(events)).not.toContain("provider unavailable raw body");
   });
 });

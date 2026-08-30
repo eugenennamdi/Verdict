@@ -5,7 +5,7 @@ export type ConversationIntent =
   | { type: "example" }
   | { type: "audit"; url: string }
   | { type: "audit_missing_url" }
-  | { type: "followup_blocked" }
+  | { type: "audit_followup" }
   | { type: "unknown" };
 
 const URL_PATTERN =
@@ -59,7 +59,7 @@ export function classifyIntent(
   if (SCORING_PATTERN.test(trimmed)) return { type: "scoring" };
   if (EXAMPLE_PATTERN.test(trimmed)) return { type: "example" };
   if (AUDIT_VERB_PATTERN.test(trimmed)) return { type: "audit_missing_url" };
-  if (context?.hasCompletedAudit) return { type: "followup_blocked" };
+  if (context?.hasCompletedAudit) return { type: "audit_followup" };
   return { type: "unknown" };
 }
 
@@ -85,7 +85,7 @@ The scoring framework is documented here: /docs/growth-readiness
 
 Paste a startup URL if you'd like me to run a live audit.`,
   auditMissingUrl: `I can investigate that. What is the startup's URL?`,
-  followupBlocked: `I've finished the audit. Open the full report for the detailed breakdown. Interactive follow-ups are coming next.`,
+  followupUnavailable: `I couldn't resolve an active report for that follow-up. Select a completed investigation and ask again.`,
   unknown: `I specialize in investigating startup growth. Give me a startup URL, or ask what I can analyze.`,
 } as const;
 

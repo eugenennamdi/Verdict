@@ -20,6 +20,18 @@ type MessageListProps = {
   onRetry?: () => void;
 };
 
+function sourceLabel(path: string, category?: string): string {
+  const segment = path.split("/").filter(Boolean).at(-1);
+  const value = segment || category || "Homepage";
+  return value
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function compactSourceUrl(url: string): string {
+  return url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+}
+
 export function MessageList({
   messages,
   liveEvents,
@@ -53,6 +65,37 @@ export function MessageList({
               </div>
               <div className="flex-1 min-w-0">
                 <FormattedMessage content={message.content} />
+                {message.auditQa &&
+                  (message.auditQa.citations.length > 0 ||
+                    message.auditQa.limitations.length > 0) && (
+                    <div className="mt-3 space-y-2">
+                      {message.auditQa.citations.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {message.auditQa.citations.map((source) => (
+                            <a
+                              key={`${message.id}-${source.sourceId}`}
+                              href={source.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600 transition-colors hover:border-orange-300 hover:text-orange-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                            >
+                              <span className="block font-bold text-slate-800 dark:text-slate-100">
+                                {source.sourceId} · {sourceLabel(source.path, source.category)}
+                              </span>
+                              <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                                {compactSourceUrl(source.url)}
+                              </span>
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      {message.auditQa.limitations.length > 0 && (
+                        <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                          {message.auditQa.limitations.join(" ")}
+                        </p>
+                      )}
+                    </div>
+                  )}
               </div>
             </div>
           );

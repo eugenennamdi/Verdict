@@ -21,6 +21,7 @@ CREATE TABLE public.reports (
     key_risks JSONB NOT NULL,
     growth_plan_30_day JSONB NOT NULL,
     evidence_trace JSONB NULL,
+    audit_context JSONB NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
