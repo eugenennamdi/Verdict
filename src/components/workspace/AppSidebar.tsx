@@ -16,7 +16,9 @@ import {
   X,
 } from "lucide-react";
 import { useTheme } from "next-themes";
+import { HumanAuditQuotaIndicator } from "./HumanAuditQuotaIndicator";
 import type { RecentInvestigation } from "./types";
+import type { HumanAuditUsageState } from "@/lib/humanAuditUsageContract";
 
 export const VerdictLogo = ({ className }: { className?: string }) => (
   <svg
@@ -90,6 +92,7 @@ type AppSidebarProps = {
   activeUrl?: string;
   isMobileOpen?: boolean;
   onMobileClose?: () => void;
+  humanAuditUsage: HumanAuditUsageState | null;
 };
 
 export function AppSidebar({
@@ -102,6 +105,7 @@ export function AppSidebar({
   activeUrl,
   isMobileOpen,
   onMobileClose,
+  humanAuditUsage,
 }: AppSidebarProps) {
   const { theme, setTheme } = useTheme();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
@@ -301,6 +305,13 @@ export function AppSidebar({
 
       {/* Bottom Nav: For Agents & Documentation */}
       <div className={`border-t border-slate-200/80 dark:border-slate-800/80 ${isCollapsed ? "p-2 space-y-2" : "p-3 space-y-2"}`}>
+        {humanAuditUsage ? (
+          <HumanAuditQuotaIndicator
+            usage={humanAuditUsage}
+            compact={isCollapsed}
+          />
+        ) : null}
+
         {!isCollapsed ? (
           <div className="flex flex-col gap-0.5">
             <Link

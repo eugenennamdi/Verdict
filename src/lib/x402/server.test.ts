@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import {
   createVerdictAuditPaymentConfig,
+  createVerdictHumanEntitlementPaymentConfig,
   createVerdictFacilitatorClient,
   createVerdictX402ResourceServer,
   DEFAULT_VERDICT_AUDIT_PRICE,
@@ -71,6 +72,30 @@ describe("Verdict x402 server configuration", () => {
         },
       ],
       description: "Autonomous Verdict growth investigation",
+      mimeType: "application/json",
+    });
+  });
+
+  it("isolates upfront settlement to the human entitlement purchase", () => {
+    const config = loadVerdictX402Config(environment());
+    expect(createVerdictAuditPaymentConfig(config).accepts).toEqual([
+      {
+        scheme: "exact",
+        network: "eip155:84532",
+        price: "$0.50",
+        payTo: PAY_TO,
+      },
+    ]);
+    expect(createVerdictHumanEntitlementPaymentConfig(config)).toMatchObject({
+      accepts: [
+        {
+          scheme: "exact",
+          network: "eip155:84532",
+          price: "$0.50",
+          payTo: PAY_TO,
+          extra: { paymentFlow: "upfront" },
+        },
+      ],
       mimeType: "application/json",
     });
   });

@@ -1,26 +1,65 @@
 import { ThinkingLevel } from "@google/genai";
+import { MODEL_TEMPORARILY_UNAVAILABLE_CODE } from "@/lib/audit/publicError";
 
 export const PRIMARY_AUDIT_MODEL = "gemini-3.7-flash";
 export const FALLBACK_AUDIT_MODEL = "gemini-3.6-flash";
+export const DEEPSEEK_FLASH_AUDIT_MODEL = "deepseek-v4-flash";
+export const DEEPSEEK_PRO_AUDIT_MODEL = "deepseek-v4-pro";
 
 /** Backwards-compatible canonical model alias. */
 export const AUDIT_MODEL = PRIMARY_AUDIT_MODEL;
 
 export type AuditModel =
   | typeof PRIMARY_AUDIT_MODEL
-  | typeof FALLBACK_AUDIT_MODEL;
+  | typeof FALLBACK_AUDIT_MODEL
+  | typeof DEEPSEEK_FLASH_AUDIT_MODEL
+  | typeof DEEPSEEK_PRO_AUDIT_MODEL;
 
-export type GeminiAvailabilityErrorCategory =
+export type AuditModelProvider = "google" | "deepseek";
+export type AuditModelTier = "primary" | "secondary" | "tertiary";
+
+export type ModelAvailabilityErrorCategory =
   | "high_demand"
   | "unavailable"
   | "rate_limited"
-  | "timeout";
+  | "timeout"
+  | "transport";
+
+export type ModelAttemptLocalFailureCategory =
+  | ModelAvailabilityErrorCategory
+  | "provider_unavailable"
+  | "provider_timeout"
+  | "incomplete_max_output_tokens"
+  | "incomplete_other"
+  | "missing_output"
+  | "malformed_json"
+  | "unexpected_response_status"
+  | "invalid_structured_output";
+
+export type ModelFinishReason =
+  | "stop"
+  | "length"
+  | "content_filter"
+  | "tool_calls"
+  | "insufficient_system_resource"
+  | "other";
+
+export type ModelAttemptTelemetry = {
+  httpStatus?: number;
+  finishReason?: ModelFinishReason;
+};
+
+/** Backwards-compatible type name for existing route and test consumers. */
+export type GeminiAvailabilityErrorCategory = ModelAvailabilityErrorCategory;
 
 export type AuditModelExecutionMetadata = {
   requestedPrimaryModel: typeof PRIMARY_AUDIT_MODEL;
+  provider: AuditModelProvider;
+  model: AuditModel;
   modelUsed: AuditModel;
+  tier: AuditModelTier;
   fallbackUsed: boolean;
-  availabilityErrorCategory?: GeminiAvailabilityErrorCategory;
+  availabilityErrorCategory?: ModelAvailabilityErrorCategory;
 };
 
 export const AUDIT_THINKING_LEVELS = Object.freeze({
@@ -43,13 +82,79 @@ export type AuditRunModelProvenance = {
   grader?: AuditModelExecutionMetadata;
 };
 
-export class GeminiAvailabilityError extends Error {
-  readonly category: GeminiAvailabilityErrorCategory;
+export class ModelAvailabilityError extends Error {
+  readonly category: ModelAvailabilityErrorCategory;
 
-  constructor(category: GeminiAvailabilityErrorCategory) {
-    super("MODEL_HIGH_DEMAND");
-    this.name = "GeminiAvailabilityError";
+  constructor(category: ModelAvailabilityErrorCategory) {
+    super(MODEL_TEMPORARILY_UNAVAILABLE_CODE);
+    this.name = "ModelAvailabilityError";
     this.category = category;
+  }
+}
+
+export class ModelProviderExhaustedError extends Error {
+  readonly category: ModelAttemptLocalFailureCategory;
+
+  constructor(category: ModelAttemptLocalFailureCategory) {
+    super(MODEL_TEMPORARILY_UNAVAILABLE_CODE);
+    this.name = "ModelProviderExhaustedError";
+    this.category = category;
+  }
+}
+
+/** Retained for callers/tests that construct the former Google-only error. */
+export class GeminiAvailabilityError extends ModelAvailabilityError {
+  constructor(category: ModelAvailabilityErrorCategory) {
+    super(category);
+    this.name = "GeminiAvailabilityError";
+  }
+}
+
+export class AttemptLocalModelProviderError extends Error {
+  readonly category: ModelAttemptLocalFailureCategory;
+  readonly telemetry: ModelAttemptTelemetry;
+
+  constructor(
+    category: ModelAttemptLocalFailureCategory,
+    telemetry: ModelAttemptTelemetry = {}
+  ) {
+    super(MODEL_TEMPORARILY_UNAVAILABLE_CODE);
+    this.name = "AttemptLocalModelProviderError";
+    this.category = category;
+    this.telemetry = telemetry;
+  }
+}
+
+export class TransientModelProviderError extends AttemptLocalModelProviderError {
+  declare readonly category: ModelAvailabilityErrorCategory;
+
+  constructor(
+    category: ModelAvailabilityErrorCategory,
+    telemetry: ModelAttemptTelemetry = {}
+  ) {
+    super(category, telemetry);
+    this.name = "TransientModelProviderError";
+  }
+}
+
+export class TerminalModelProviderError extends Error {
+  readonly safeCategory:
+    | "authentication_error"
+    | "permission_error"
+    | "invalid_request"
+    | "content_safety"
+    | "application";
+  readonly telemetry: ModelAttemptTelemetry;
+
+  constructor(
+    safeCategory: TerminalModelProviderError["safeCategory"],
+    message = "MODEL_PROVIDER_TERMINAL_FAILURE",
+    telemetry: ModelAttemptTelemetry = {}
+  ) {
+    super(message);
+    this.name = "TerminalModelProviderError";
+    this.safeCategory = safeCategory;
+    this.telemetry = telemetry;
   }
 }
 
@@ -86,13 +191,20 @@ function symbolicStatus(error: unknown): string[] {
   return statuses;
 }
 
-export function classifyTransientGeminiAvailabilityError(
+export function classifyTransientModelError(
   error: unknown
-): GeminiAvailabilityErrorCategory | null {
-  if (error instanceof GeminiAvailabilityError) return error.category;
+): ModelAvailabilityErrorCategory | null {
+  if (
+    error instanceof ModelAvailabilityError ||
+    error instanceof TransientModelProviderError
+  ) {
+    return error.category;
+  }
 
   const status = numericStatus(error);
-  if (status === 503) return "unavailable";
+  if (status !== undefined && status >= 500 && status <= 504) {
+    return "unavailable";
+  }
   if (status === 429) return "rate_limited";
 
   const symbolic = symbolicStatus(error);
@@ -106,84 +218,82 @@ export function classifyTransientGeminiAvailabilityError(
 
   const message = error instanceof Error ? error.message.trim() : "";
   if (/MODEL_HIGH_DEMAND|high demand/i.test(message)) return "high_demand";
-  if (/^(?:TIMEOUT_ERROR|AUDIT_QA_TIMEOUT)$/i.test(message)) return "timeout";
-  if (/^UNAVAILABLE$/i.test(message) || /\b503\b.*\bUNAVAILABLE\b|\bUNAVAILABLE\b.*\b503\b/i.test(message)) {
+  if (
+    /^(?:TIMEOUT_ERROR|AUDIT_QA_TIMEOUT|MODEL_ATTEMPT_TIMEOUT)$/i.test(
+      message
+    ) ||
+    /(?:AbortError|TimeoutError)/i.test(
+      error instanceof Error ? error.name : ""
+    )
+  ) {
+    return "timeout";
+  }
+  if (
+    /^(?:UNAVAILABLE)$/i.test(message) ||
+    /\b503\b.*\bUNAVAILABLE\b|\bUNAVAILABLE\b.*\b503\b/i.test(message)
+  ) {
     return "unavailable";
   }
-  if (/\b429\b.*(?:RESOURCE_EXHAUSTED|rate limit|too many requests)/i.test(message)) {
+  if (
+    /\b429\b.*(?:RESOURCE_EXHAUSTED|rate limit|too many requests)/i.test(
+      message
+    )
+  ) {
     return "rate_limited";
+  }
+  if (
+    /^(?:fetch failed|network error|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN)$/i.test(
+      message
+    )
+  ) {
+    return "transport";
   }
   return null;
 }
 
-export function isTransientGeminiAvailabilityError(error: unknown): boolean {
-  return classifyTransientGeminiAvailabilityError(error) !== null;
+export function classifyAttemptLocalModelError(
+  error: unknown
+): ModelAttemptLocalFailureCategory | null {
+  if (error instanceof AttemptLocalModelProviderError) return error.category;
+  return classifyTransientModelError(error);
 }
 
-export async function runAuditModelWithAvailabilityFailover<T>(input: {
-  task: AuditModelTask;
-  generate: (model: AuditModel) => Promise<T>;
-  onResult?: AuditModelObserver;
-  canAttempt?: () => boolean;
-}): Promise<{ value: T; metadata: AuditModelExecutionMetadata }> {
-  let availabilityErrorCategory: GeminiAvailabilityErrorCategory | undefined;
-
-  for (let primaryAttempt = 0; primaryAttempt < 2; primaryAttempt++) {
-    try {
-      const value = await input.generate(PRIMARY_AUDIT_MODEL);
-      const metadata: AuditModelExecutionMetadata = {
-        requestedPrimaryModel: PRIMARY_AUDIT_MODEL,
-        modelUsed: PRIMARY_AUDIT_MODEL,
-        fallbackUsed: false,
-        ...(availabilityErrorCategory ? { availabilityErrorCategory } : {}),
-      };
-      input.onResult?.(input.task, metadata);
-      return { value, metadata };
-    } catch (error) {
-      const category = classifyTransientGeminiAvailabilityError(error);
-      if (!category) throw error;
-      availabilityErrorCategory = category;
-      if (primaryAttempt === 0) {
-        if (input.canAttempt?.() === false) {
-          throw new GeminiAvailabilityError(category);
-        }
-        console.warn("[Gemini] Primary audit model unavailable; retrying once", {
-          task: input.task,
-          model: PRIMARY_AUDIT_MODEL,
-          category,
-        });
-      }
-    }
+export function modelAttemptTelemetry(error: unknown): ModelAttemptTelemetry {
+  if (
+    error instanceof AttemptLocalModelProviderError ||
+    error instanceof TerminalModelProviderError
+  ) {
+    return error.telemetry;
   }
+  const status = numericStatus(error);
+  return status === undefined ? {} : { httpStatus: status };
+}
 
-  if (input.canAttempt?.() === false) {
-    throw new GeminiAvailabilityError(
-      availabilityErrorCategory ?? "unavailable"
-    );
+export function classifyTransientGeminiAvailabilityError(
+  error: unknown
+): GeminiAvailabilityErrorCategory | null {
+  return classifyTransientModelError(error);
+}
+
+export function isTransientGeminiAvailabilityError(error: unknown): boolean {
+  return classifyTransientModelError(error) !== null;
+}
+
+export function classifyTerminalModelError(
+  error: unknown
+): TerminalModelProviderError["safeCategory"] {
+  if (error instanceof TerminalModelProviderError) return error.safeCategory;
+  const status = numericStatus(error);
+  if (status === 401) return "authentication_error";
+  if (status === 403) return "permission_error";
+  if ([400, 404, 405, 409, 422].includes(status ?? -1)) {
+    return "invalid_request";
   }
-
-  console.warn("[Gemini] Primary retry unavailable; using availability fallback", {
-    task: input.task,
-    primaryModel: PRIMARY_AUDIT_MODEL,
-    fallbackModel: FALLBACK_AUDIT_MODEL,
-    category: availabilityErrorCategory,
-  });
-
-  try {
-    const value = await input.generate(FALLBACK_AUDIT_MODEL);
-    const metadata: AuditModelExecutionMetadata = {
-      requestedPrimaryModel: PRIMARY_AUDIT_MODEL,
-      modelUsed: FALLBACK_AUDIT_MODEL,
-      fallbackUsed: true,
-      ...(availabilityErrorCategory ? { availabilityErrorCategory } : {}),
-    };
-    input.onResult?.(input.task, metadata);
-    return { value, metadata };
-  } catch (error) {
-    const category = classifyTransientGeminiAvailabilityError(error);
-    if (!category) throw error;
-    throw new GeminiAvailabilityError(category);
+  const message = error instanceof Error ? error.message : "";
+  if (/safety|content.?filter|blocked content/i.test(message)) {
+    return "content_safety";
   }
+  return "application";
 }
 
 export function createAuditGenerationConfig(

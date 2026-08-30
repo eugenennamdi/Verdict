@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { ThinkingLevel } from "@google/genai";
 
 vi.mock("server-only", () => ({}));
 
@@ -12,8 +11,8 @@ import {
   type AuditQaGenerator,
 } from "./auditQa";
 
-describe("grounded Gemini audit Q&A", () => {
-  it("uses one Gemini 3.7 medium-thinking structured call", async () => {
+describe("grounded audit Q&A", () => {
+  it("uses one Gemini 3.7 structured call when primary succeeds", async () => {
     const loaded = makeLoadedAuditContext();
     const generate = vi.fn(async (_request: Parameters<AuditQaGenerator>[0]) =>
       JSON.stringify({
@@ -36,15 +35,17 @@ describe("grounded Gemini audit Q&A", () => {
     expect(generate).toHaveBeenCalledOnce();
     const request = generate.mock.calls[0][0];
     expect(request.model).toBe("gemini-3.7-flash");
-    expect(request.config).toMatchObject({
-      thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
-      responseMimeType: "application/json",
-      systemInstruction: AUDIT_QA_SYSTEM_INSTRUCTION,
-    });
+    expect(request.provider).toBe("google");
+    expect(request.task).toBe("qa");
+    expect(request.schema).toMatchObject({ type: expect.anything() });
+    expect(request.systemInstruction).toBe(AUDIT_QA_SYSTEM_INSTRUCTION);
     expect(answer.citations).toEqual(["S2"]);
     expect(answer.modelProvenance).toEqual({
       requestedPrimaryModel: "gemini-3.7-flash",
+      provider: "google",
+      model: "gemini-3.7-flash",
       modelUsed: "gemini-3.7-flash",
+      tier: "primary",
       fallbackUsed: false,
     });
     for (const key of [
@@ -54,15 +55,14 @@ describe("grounded Gemini audit Q&A", () => {
       "candidateCount",
       "thinkingBudget",
     ]) {
-      expect(request.config).not.toHaveProperty(key);
+      expect(request).not.toHaveProperty(key);
     }
   });
 
-  it("uses the same medium-thinking schema when transient failures require 3.6", async () => {
+  it("uses DeepSeek V4 Flash immediately after transient Gemini failure", async () => {
     const loaded = makeLoadedAuditContext();
     const generate = vi
       .fn<AuditQaGenerator>()
-      .mockRejectedValueOnce(Object.assign(new Error("capacity"), { status: 503 }))
       .mockRejectedValueOnce(Object.assign(new Error("capacity"), { status: 503 }))
       .mockResolvedValueOnce(
         JSON.stringify({
@@ -81,21 +81,86 @@ describe("grounded Gemini audit Q&A", () => {
 
     expect(generate.mock.calls.map(([request]) => request.model)).toEqual([
       "gemini-3.7-flash",
-      "gemini-3.7-flash",
-      "gemini-3.6-flash",
+      "deepseek-v4-flash",
     ]);
-    expect(generate.mock.calls[0][0].config).toEqual(
-      generate.mock.calls[2][0].config
-    );
-    expect(generate.mock.calls[2][0].config.thinkingConfig.thinkingLevel).toBe(
-      ThinkingLevel.MEDIUM
-    );
+    expect(generate.mock.calls.map(([request]) => request.provider)).toEqual([
+      "google",
+      "deepseek",
+    ]);
     expect(answer.modelProvenance).toMatchObject({
-      modelUsed: "gemini-3.6-flash",
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      modelUsed: "deepseek-v4-flash",
+      tier: "secondary",
       fallbackUsed: true,
       availabilityErrorCategory: "unavailable",
     });
     expect(answer.citations).toEqual(["S2"]);
+  });
+
+  it("uses Gemini 3.6 only after both providers have transient failures", async () => {
+    const loaded = makeLoadedAuditContext();
+    const generate = vi
+      .fn<AuditQaGenerator>()
+      .mockRejectedValueOnce({ status: 503 })
+      .mockRejectedValueOnce({ status: 503 })
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          answer: "The pricing evidence supports the judgment. [S2]",
+          citations: ["S2"],
+          answerType: "score_explanation",
+          confidence: "high",
+          limitations: [],
+        })
+      );
+
+    const answer = await answerGroundedAuditQuestion(
+      { question: "Why did Conversion get that score?", loaded },
+      { generate }
+    );
+
+    expect(generate.mock.calls.map(([request]) => request.model)).toEqual([
+      "gemini-3.7-flash",
+      "deepseek-v4-flash",
+      "gemini-3.6-flash",
+    ]);
+    expect(answer.modelProvenance).toMatchObject({
+      provider: "google",
+      model: "gemini-3.6-flash",
+      modelUsed: "gemini-3.6-flash",
+      tier: "tertiary",
+    });
+  });
+
+  it("falls through structurally invalid Q&A output before sanitization", async () => {
+    const loaded = makeLoadedAuditContext();
+    const generate = vi
+      .fn<AuditQaGenerator>()
+      .mockResolvedValueOnce('{"answer":"missing required fields"}')
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          answer: "Grounded answer from the next provider. [S2]",
+          citations: ["S2"],
+          answerType: "evidence",
+          confidence: "high",
+          limitations: [],
+        })
+      );
+
+    const answer = await answerGroundedAuditQuestion(
+      { question: "What supports the conclusion?", loaded },
+      { generate }
+    );
+
+    expect(generate.mock.calls.map(([request]) => request.model)).toEqual([
+      "gemini-3.7-flash",
+      "deepseek-v4-flash",
+    ]);
+    expect(answer.citations).toEqual(["S2"]);
+    expect(answer.modelProvenance).toMatchObject({
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+    });
   });
 
   it("retains valid citations and strips invented model citations", () => {

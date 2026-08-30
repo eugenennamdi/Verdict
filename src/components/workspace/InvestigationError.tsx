@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertCircle, RefreshCw } from "lucide-react";
+import { publicInvestigationErrorMessage } from "@/lib/audit/publicError";
 
 type InvestigationErrorProps = {
   message: string;
@@ -8,6 +9,7 @@ type InvestigationErrorProps = {
 };
 
 export function InvestigationError({ message, onRetry }: InvestigationErrorProps) {
+  const safeMessage = publicInvestigationErrorMessage(message);
   return (
     <div className="w-full rounded-2xl border border-rose-200/80 bg-rose-50/40 p-4 dark:border-rose-900/40 dark:bg-rose-950/20">
       <div className="flex items-start gap-3">
@@ -19,7 +21,7 @@ export function InvestigationError({ message, onRetry }: InvestigationErrorProps
             Investigation couldn&apos;t continue
           </h4>
           <p className="mt-1 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
-            {message}
+            {safeMessage}
           </p>
 
           {onRetry && (

@@ -8,6 +8,7 @@ import {
   type RunVerdictAuditResult,
 } from "@/lib/audit/runVerdictAudit";
 import { ScrapingError } from "@/lib/engine";
+import { isSanitizedModelAvailabilityError } from "@/lib/audit/publicError";
 import {
   parseAndAssertHttpUrl,
   UnsafeUrlError,
@@ -93,7 +94,7 @@ export function createAuthorizedAuditHandler(
           "The startup could not be audited"
         );
       }
-      if (error instanceof Error && error.message === "MODEL_HIGH_DEMAND") {
+      if (isSanitizedModelAvailabilityError(error)) {
         return errorResponse(
           503,
           "AUDIT_TEMPORARILY_UNAVAILABLE",

@@ -10,9 +10,17 @@ import type {
 } from "@x402/core/types";
 import { NextRequest } from "next/server";
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
 import { createAuthorizedAuditHandler } from "@/app/api/v2/audit/route";
 import type { RunVerdictAuditResult } from "@/lib/audit/runVerdictAudit";
 import { ScrapingError } from "@/lib/engine";
+import {
+  ModelAvailabilityError,
+  ModelProviderExhaustedError,
+  TerminalModelProviderError,
+} from "@/lib/audit/model";
 import {
   protectVerdictAuditRoute,
   type VerdictX402Config,
@@ -283,6 +291,47 @@ describe("POST /api/v2/audit", () => {
     expect(response.headers.get("PAYMENT-RESPONSE")).toBeNull();
     expect(facilitator.verifyCalls).toBe(1);
     expect(facilitator.settleCalls).toBe(0);
+  });
+
+  it("keeps the public API schema stable for exhausted model availability", async () => {
+    const runAudit = vi.fn(async () => {
+      throw new ModelAvailabilityError("unavailable");
+    });
+    const response = await createAuthorizedAuditHandler({ runAudit })(
+      request({ url: "https://example.com" })
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "AUDIT_TEMPORARILY_UNAVAILABLE",
+        message: "The audit service is temporarily unavailable",
+      },
+    });
+  });
+
+  it.each([
+    new ModelProviderExhaustedError("malformed_json"),
+    new TerminalModelProviderError("invalid_request"),
+  ])("sanitizes provider failures at the public API boundary", async (failure) => {
+    const runAudit = vi.fn(async () => {
+      throw failure;
+    });
+    const response = await createAuthorizedAuditHandler({ runAudit })(
+      request({ url: "https://example.com" })
+    );
+
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(body).toEqual({
+      error: {
+        code: "AUDIT_TEMPORARILY_UNAVAILABLE",
+        message: "The audit service is temporarily unavailable",
+      },
+    });
+    expect(JSON.stringify(body)).not.toMatch(
+      /MODEL_PROVIDER|invalid_request|malformed_json|gemini|deepseek/i
+    );
   });
 
   it("rejects an invalid URL after authorization without running or settling", async () => {

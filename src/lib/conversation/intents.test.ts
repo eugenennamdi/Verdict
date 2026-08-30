@@ -53,7 +53,8 @@ describe("classifyIntent", () => {
 });
 
 describe("rateLimitReply", () => {
-  it("includes remaining hours when TTL is known", () => {
-    expect(rateLimitReply(7200)).toContain("2 hour");
+  it("uses infrastructure-abuse wording rather than product-quota wording", () => {
+    expect(rateLimitReply(120)).toContain("2 minute");
+    expect(rateLimitReply(120)).not.toContain("free investigation");
   });
 });

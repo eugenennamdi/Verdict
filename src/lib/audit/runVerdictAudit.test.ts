@@ -15,7 +15,18 @@ type GradeMock = (
       task: "normalization" | "planner" | "grader" | "qa",
       metadata: {
         requestedPrimaryModel: "gemini-3.7-flash";
-        modelUsed: "gemini-3.7-flash" | "gemini-3.6-flash";
+        provider: "google" | "deepseek";
+        model:
+          | "gemini-3.7-flash"
+          | "gemini-3.6-flash"
+          | "deepseek-v4-flash"
+          | "deepseek-v4-pro";
+        modelUsed:
+          | "gemini-3.7-flash"
+          | "gemini-3.6-flash"
+          | "deepseek-v4-flash"
+          | "deepseek-v4-pro";
+        tier: "primary" | "secondary" | "tertiary";
         fallbackUsed: boolean;
       }
     ) => void;
@@ -62,7 +73,10 @@ const mocks = vi.hoisted(() => ({
   identifyFromMarkdown: vi.fn<IdentifyMock>(async (_markdown, options) => {
     options?.onModelResult?.("normalization", {
       requestedPrimaryModel: "gemini-3.7-flash",
+      provider: "google",
+      model: "gemini-3.7-flash",
       modelUsed: "gemini-3.7-flash",
+      tier: "primary",
       fallbackUsed: false,
     });
     return {
@@ -75,7 +89,10 @@ const mocks = vi.hoisted(() => ({
   gradeFromMarkdown: vi.fn<GradeMock>(async (_url, _markdown, options) => {
     options?.onModelResult?.("grader", {
       requestedPrimaryModel: "gemini-3.7-flash",
-      modelUsed: "gemini-3.6-flash",
+      provider: "deepseek",
+      model: "deepseek-v4-pro",
+      modelUsed: "deepseek-v4-pro",
+      tier: "secondary",
       fallbackUsed: true,
     });
     return {
@@ -185,13 +202,19 @@ describe("runVerdictAudit homepage-only regression", () => {
     expect(result.modelProvenance).toEqual({
       normalization: {
         requestedPrimaryModel: "gemini-3.7-flash",
+        provider: "google",
+        model: "gemini-3.7-flash",
         modelUsed: "gemini-3.7-flash",
+        tier: "primary",
         fallbackUsed: false,
       },
       planner: [],
       grader: {
         requestedPrimaryModel: "gemini-3.7-flash",
-        modelUsed: "gemini-3.6-flash",
+        provider: "deepseek",
+        model: "deepseek-v4-pro",
+        modelUsed: "deepseek-v4-pro",
+        tier: "secondary",
         fallbackUsed: true,
       },
     });
@@ -295,7 +318,7 @@ describe("runVerdictAudit homepage-only regression", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "audit.failed",
-      data: { error: "AUDIT_FAILED" },
+      data: { error: "MODEL_TEMPORARILY_UNAVAILABLE" },
     });
     expect(JSON.stringify(events)).not.toContain("provider unavailable raw body");
   });

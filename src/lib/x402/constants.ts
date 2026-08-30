@@ -13,3 +13,6 @@ export const VERDICT_CDP_FACILITATOR_URL =
 
 export const VERDICT_AUDIT_DESCRIPTION =
   "Autonomous Verdict growth investigation";
+
+export const VERDICT_HUMAN_AUDIT_ENTITLEMENT_DESCRIPTION =
+  "One additional Verdict autonomous growth investigation";

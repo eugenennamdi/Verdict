@@ -122,13 +122,19 @@ function buildContext() {
     models: {
       normalization: {
         requestedPrimaryModel: "gemini-3.7-flash",
+        provider: "google",
+        model: "gemini-3.7-flash",
         modelUsed: "gemini-3.7-flash",
+        tier: "primary",
         fallbackUsed: false,
       },
       planner: [],
       grader: {
         requestedPrimaryModel: "gemini-3.7-flash",
-        modelUsed: "gemini-3.6-flash",
+        provider: "deepseek",
+        model: "deepseek-v4-pro",
+        modelUsed: "deepseek-v4-pro",
+        tier: "secondary",
         fallbackUsed: true,
         availabilityErrorCategory: "unavailable",
       },
@@ -160,13 +166,19 @@ describe("AuditContextPackV1", () => {
       models: {
         normalization: {
           requestedPrimaryModel: "gemini-3.7-flash",
+          provider: "google",
+          model: "gemini-3.7-flash",
           modelUsed: "gemini-3.7-flash",
+          tier: "primary",
           fallbackUsed: false,
         },
         planner: [],
         grader: {
           requestedPrimaryModel: "gemini-3.7-flash",
-          modelUsed: "gemini-3.6-flash",
+          provider: "deepseek",
+          model: "deepseek-v4-pro",
+          modelUsed: "deepseek-v4-pro",
+          tier: "secondary",
           fallbackUsed: true,
           availabilityErrorCategory: "unavailable",
         },
