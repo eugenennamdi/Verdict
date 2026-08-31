@@ -49,6 +49,10 @@ Rules:
 - Distinguish observed facts from recommendations or inference.
 - Acknowledge missing or incomplete evidence explicitly.
 - Never alter stored scores or claim conversation changes the report.
+- The overall Growth Readiness Score is public, but numeric scores for individual
+  dimensions/pillars are not. Use qualitative terms such as strongest, weakest,
+  or comparatively stronger instead of revealing a pillar number, even when the
+  user asks for one.
 - Never calculate a new score. Deterministic TypeScript handles score math and
   counterfactuals before this service is called.
 - A bounded investigation is not an exhaustive crawl.
@@ -108,6 +112,11 @@ function compactList(value: string[], maxItems: number, maxChars: number) {
 
 function groundedContext(loaded: LoadedAuditContext) {
   const context = loaded.context;
+  const pillarScores = Object.values(context.pillars).map(
+    (pillar) => pillar.score
+  );
+  const strongestScore = Math.max(...pillarScores);
+  const weakestScore = Math.min(...pillarScores);
   return {
     reportId: loaded.reportId,
     provenance: loaded.provenance,
@@ -149,7 +158,14 @@ function groundedContext(loaded: LoadedAuditContext) {
       Object.entries(context.pillars).map(([key, pillar]) => [
         key,
         {
-          score: pillar.score,
+          relativeStanding:
+            strongestScore === weakestScore
+              ? "in_line_with_other_dimensions"
+              : pillar.score === strongestScore
+                ? "strongest"
+                : pillar.score === weakestScore
+                  ? "weakest"
+                  : "between_strongest_and_weakest",
           confidence: compact(pillar.confidence, 40),
           reason: compact(pillar.reason, 500),
           strengths: compactList(pillar.strengths, 5, 320),
@@ -165,6 +181,8 @@ function groundedContext(loaded: LoadedAuditContext) {
     })),
     investigation: {
       pagesInspected: context.investigation.pagesInspected,
+      pagesAccepted:
+        context.investigation.pagesAccepted ?? context.sources.length,
       finalCoverage: { ...context.investigation.finalCoverage },
       planningRounds: context.investigation.planningRounds,
       stopReason: context.investigation.stopReason,

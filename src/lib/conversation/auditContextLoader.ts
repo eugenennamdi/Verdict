@@ -164,6 +164,21 @@ function budgetUsage(
       0,
       Math.round(finiteNumber(raw.pagesInspected, sources.length))
     ),
+    ...(typeof raw.pagesAccepted === "number"
+      ? {
+          pagesAccepted: Math.max(0, Math.round(raw.pagesAccepted)),
+        }
+      : {}),
+    ...(typeof raw.pagesRejected === "number"
+      ? {
+          pagesRejected: Math.max(0, Math.round(raw.pagesRejected)),
+        }
+      : {}),
+    ...(typeof raw.pagesFailed === "number"
+      ? {
+          pagesFailed: Math.max(0, Math.round(raw.pagesFailed)),
+        }
+      : {}),
     pagesUsed: Math.max(
       0,
       Math.round(finiteNumber(raw.pagesUsed, sources.length))
@@ -173,6 +188,14 @@ function budgetUsage(
       0,
       Math.round(finiteNumber(raw.evidenceChars, evidenceChars))
     ),
+    ...(typeof raw.fetchedEvidenceChars === "number"
+      ? {
+          fetchedEvidenceChars: Math.max(
+            0,
+            Math.round(raw.fetchedEvidenceChars)
+          ),
+        }
+      : {}),
     maxEvidenceChars: Math.max(
       1,
       Math.round(finiteNumber(raw.maxEvidenceChars, 80_000))

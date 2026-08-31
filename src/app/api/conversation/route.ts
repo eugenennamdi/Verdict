@@ -13,6 +13,7 @@ import {
 } from "@/lib/conversation/auditContextLoader";
 import {
   answerDeterministically,
+  applyPublicAuditQaPolicy,
   classifyAuditFollowup,
   fallbackGroundedAnswer,
 } from "@/lib/conversation/auditQuestions";
@@ -38,8 +39,42 @@ const MAX_MESSAGES = 10;
 const MAX_MESSAGE_CHARS = 1500;
 const CONVERSATION_RATE_LIMIT = 30;
 const CONVERSATION_RATE_WINDOW_SECONDS = 60;
+export const CONVERSATION_RATE_LIMIT_TIMEOUT_MS = 1_000;
 
 const inflight = new Set<string>();
+
+type ConversationRateLimitStore = {
+  incr: (key: string) => Promise<number>;
+  expire: (key: string, seconds: number) => Promise<unknown>;
+};
+
+export async function isConversationRateLimited(
+  store: ConversationRateLimitStore,
+  rateKey: string,
+  timeoutMs = CONVERSATION_RATE_LIMIT_TIMEOUT_MS
+): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs);
+  });
+  const check = (async () => {
+    try {
+      const count = await store.incr(rateKey);
+      if (count === 1) {
+        await store.expire(rateKey, CONVERSATION_RATE_WINDOW_SECONDS);
+      }
+      return typeof count === "number" && count > CONVERSATION_RATE_LIMIT;
+    } catch {
+      return false;
+    }
+  })();
+
+  try {
+    return await Promise.race([check, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 function clientIp(req: Request): string {
   const forwarded = req.headers.get("x-forwarded-for");
@@ -178,6 +213,7 @@ function publicQaMetadata(
               sourceId,
               url: source.url,
               path: source.path,
+              role: source.role,
               ...(source.category ? { category: source.category } : {}),
             },
           ]
@@ -292,11 +328,16 @@ export function createConversationHandler(
 
       const deterministic = answerDeterministically(route, loaded, question);
       if (deterministic) {
+        const publicAnswer = applyPublicAuditQaPolicy(
+          deterministic,
+          loaded,
+          question
+        );
         return NextResponse.json({
           action: "respond",
-          message: deterministic.answer,
+          message: publicAnswer.answer,
           url: null,
-          auditQa: publicQaMetadata(loaded, deterministic),
+          auditQa: publicQaMetadata(loaded, publicAnswer),
         });
       }
 
@@ -311,19 +352,21 @@ export function createConversationHandler(
             ? { generate: dependencies.qaGenerator }
             : undefined
         );
+        const publicAnswer = applyPublicAuditQaPolicy(answer, loaded, question);
         return NextResponse.json({
           action: "respond",
-          message: answer.answer,
+          message: publicAnswer.answer,
           url: null,
-          auditQa: publicQaMetadata(loaded, answer),
+          auditQa: publicQaMetadata(loaded, publicAnswer),
         });
       } catch {
         const fallback = fallbackGroundedAnswer(loaded, question);
+        const publicAnswer = applyPublicAuditQaPolicy(fallback, loaded, question);
         return NextResponse.json({
           action: "respond",
-          message: fallback.answer,
+          message: publicAnswer.answer,
           url: null,
-          auditQa: publicQaMetadata(loaded, fallback),
+          auditQa: publicQaMetadata(loaded, publicAnswer),
         });
       }
     }
@@ -402,20 +445,12 @@ export async function POST(req: Request) {
     );
   }
 
-  try {
-    const rateKey = `conversation_rate:${ip}`;
-    const count = await redis.incr(rateKey);
-    if (count === 1) {
-      await redis.expire(rateKey, CONVERSATION_RATE_WINDOW_SECONDS);
-    }
-    if (typeof count === "number" && count > CONVERSATION_RATE_LIMIT) {
-      return NextResponse.json(
-        { action: "respond", message: FALLBACK_REPLY, url: null },
-        { status: 429 }
-      );
-    }
-  } catch {
-    // Dummy redis still supports incr; ignore limiter failures.
+  const rateKey = `conversation_rate:${ip}`;
+  if (await isConversationRateLimited(redis, rateKey)) {
+    return NextResponse.json(
+      { action: "respond", message: FALLBACK_REPLY, url: null },
+      { status: 429 }
+    );
   }
 
   inflight.add(ip);

@@ -10,7 +10,10 @@ vi.mock("@/lib/redis", () => ({
   },
 }));
 
-import { createConversationHandler } from "./route";
+import {
+  createConversationHandler,
+  isConversationRateLimited,
+} from "./route";
 import { makeLoadedAuditContext } from "@/lib/conversation/__testutils__/auditContext";
 
 const REPORT_ID = "11111111-1111-4111-8111-111111111111";
@@ -24,13 +27,57 @@ function request(body: unknown): Request {
 }
 
 describe("POST /api/conversation grounded audit routing", () => {
+  it("bounds an unavailable Redis rate-limit preflight and fails open", async () => {
+    vi.useFakeTimers();
+    const store = {
+      incr: vi.fn(() => new Promise<number>(() => undefined)),
+      expire: vi.fn(async () => 1),
+    };
+
+    const result = isConversationRateLimited(store, "conversation_rate:test", 50);
+    await vi.advanceTimersByTimeAsync(50);
+
+    await expect(result).resolves.toBe(false);
+    expect(store.expire).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("still enforces the conversation rate limit when Redis responds", async () => {
+    const store = {
+      incr: vi.fn(async () => 31),
+      expire: vi.fn(async () => 1),
+    };
+    await expect(
+      isConversationRateLimited(store, "conversation_rate:test", 50)
+    ).resolves.toBe(true);
+  });
+
+  it("sanitizes a general provider timeout into a normal fallback response", async () => {
+    const handler = createConversationHandler({
+      complete: async () => {
+        throw new DOMException("timed out", "TimeoutError");
+      },
+    });
+    const response = await handler(
+      request({ messages: [{ role: "user", content: "Hello" }] })
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      action: "respond",
+      message: "Whenever you're ready, send a public startup URL and I'll take a look.",
+      url: null,
+    });
+  });
+
   it("routes an active-report follow-up to authoritative audit Q&A", async () => {
     const loaded = makeLoadedAuditContext();
     const loadContext = vi.fn(async () => loaded);
     const answerGrounded = vi.fn(async (input) => {
       expect(input.loaded.context.companyIdentity.company_name).toBe("Example");
       return {
-        answer: "Conversion reflects the inspected pricing evidence. [S2]",
+        answer:
+          "Conversion scored lowest (60) because the inspected pricing path creates friction. [S2]",
         citations: ["S2" as const],
         answerType: "score_explanation" as const,
         confidence: "high" as const,
@@ -60,6 +107,9 @@ describe("POST /api/conversation grounded audit routing", () => {
     expect(answerGrounded).toHaveBeenCalledOnce();
     expect(complete).not.toHaveBeenCalled();
     expect(JSON.stringify(payload)).not.toContain("FABRICATED CLIENT CONTEXT");
+    expect(payload.message).toContain("Conversion was one of the weakest areas");
+    expect(payload.message).toContain("pricing path creates friction");
+    expect(payload.message).not.toMatch(/\b60\b|S2/);
     expect(payload).toMatchObject({
       action: "respond",
       auditQa: {
@@ -68,6 +118,7 @@ describe("POST /api/conversation grounded audit routing", () => {
           {
             sourceId: "S2",
             url: "https://example.com/pricing",
+            role: "supporting",
           },
         ],
       },
@@ -94,7 +145,8 @@ describe("POST /api/conversation grounded audit routing", () => {
     const payload = await response.json();
 
     expect(answerGrounded).toHaveBeenCalledOnce();
-    expect(payload.message).toContain("Conversion scored **60/100**");
+    expect(payload.message).toContain("Conversion was one of the weakest areas");
+    expect(payload.message).not.toContain("60");
     expect(payload.auditQa).toMatchObject({
       answerType: "score_explanation",
       citations: [],
@@ -127,7 +179,8 @@ describe("POST /api/conversation grounded audit routing", () => {
       "deepseek-v4-flash",
       "gemini-3.6-flash",
     ]);
-    expect(payload.message).toContain("Conversion scored **60/100**");
+    expect(payload.message).toContain("Conversion was one of the weakest areas");
+    expect(payload.message).not.toContain("60");
     expect(payload.auditQa.citations).toEqual([]);
   });
 
@@ -349,7 +402,9 @@ describe("POST /api/conversation grounded audit routing", () => {
       })
     );
 
-    expect((await sourceResponse.json()).message).toContain("/pricing [S2]");
+    const sourcePayload = await sourceResponse.json();
+    expect(sourcePayload.message).toContain("/pricing as inspected");
+    expect(sourcePayload.message).not.toContain("S2");
     expect((await counterfactualResponse.json()).message).toContain("73/100");
     expect(answerGrounded).not.toHaveBeenCalled();
     expect(complete).not.toHaveBeenCalled();

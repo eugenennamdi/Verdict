@@ -28,6 +28,7 @@ export type AuditAnswerSource = {
   sourceId: EvidenceSourceId;
   url: string;
   path: string;
+  role?: "homepage" | "supporting";
   category?: EvidenceCategory;
 };
 

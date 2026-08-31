@@ -31,4 +31,29 @@ describe("GET /api/usage", () => {
     expect(JSON.stringify(payload)).not.toMatch(/entitlementId|visitor|settlement/i);
     expect(getUsage).toHaveBeenCalledWith("private-redis-identity");
   });
+
+  it("times out a hanging usage read and returns a safe 503", async () => {
+    vi.useFakeTimers();
+    const getUsage = vi.fn(() => new Promise<never>(() => undefined));
+    const handler = createUsageHandler({
+      resolveVisitor: () => ({
+        quotaIdentity: "private-redis-identity",
+      }),
+      getUsage,
+      timeoutMs: 50,
+    });
+
+    const responsePromise = handler(
+      new Request("https://tryverdict.xyz/api/usage")
+    );
+    await vi.advanceTimersByTimeAsync(50);
+    const response = await responsePromise;
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "HUMAN_AUDIT_QUOTA_UNAVAILABLE",
+    });
+    expect(getUsage).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
 });

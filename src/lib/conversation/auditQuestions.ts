@@ -16,6 +16,8 @@ export type AuditFollowupRoute =
   | { type: "source_list" }
   | { type: "source_count" }
   | { type: "source_exists"; term: string }
+  | { type: "overall_score" }
+  | { type: "pillar_score"; pillar: PillarKey }
   | { type: "score_breakdown" }
   | { type: "counterfactual"; overrides: Partial<PillarScores>; invalid?: string }
   | { type: "completeness" }
@@ -116,6 +118,26 @@ export function classifyAuditFollowup(
   if (RESEARCH_EXTENSION_PATTERN.test(trimmed)) {
     return hasActiveReport
       ? { type: "research_extension" }
+      : { type: "missing_context" };
+  }
+
+  if (
+    /\b(?:what|which)\s+(?:was|is)\s+(?:our|the|this\s+company(?:'s)?|their)?\s*growth readiness score\b|\bwhat\s+growth readiness score\s+did\b/i.test(
+      trimmed
+    )
+  ) {
+    return hasActiveReport ? { type: "overall_score" } : { type: "missing_context" };
+  }
+
+  const explicitScorePillar = referencedPillar(trimmed);
+  if (
+    explicitScorePillar &&
+    (/\bwhat\s+(?:score|rating)\s+did\b/i.test(trimmed) ||
+      /\bwhat\s+(?:was|is)\b.*\b(?:score|rating)\b/i.test(trimmed) ||
+      /\bhow\s+(?:much|many points)\b.*\b(?:score|rating|get)\b/i.test(trimmed))
+  ) {
+    return hasActiveReport
+      ? { type: "pillar_score", pillar: explicitScorePillar }
       : { type: "missing_context" };
   }
 
@@ -248,7 +270,7 @@ export function matchingSources(
 
 function sourcesText(sources: AuditContextSource[]): string {
   return sources
-    .map((source) => `${source.sourceId} · ${source.path || "/"}`)
+    .map((source) => source.path || "/")
     .join(", ");
 }
 
@@ -271,6 +293,121 @@ function referencedPillar(question: string): PillarKey | null {
     }
   }
   return null;
+}
+
+function pillarStanding(
+  context: AuditContextPackV1,
+  pillarKey: PillarKey
+): string {
+  const scores = (Object.keys(context.pillars) as PillarKey[]).map(
+    (key) => context.pillars[key].score
+  );
+  const strongest = Math.max(...scores);
+  const weakest = Math.min(...scores);
+  const score = context.pillars[pillarKey].score;
+  if (strongest === weakest) return "was in line with the other areas";
+  if (score === strongest) {
+    return scores.filter((value) => value === strongest).length === 1
+      ? "was the strongest area"
+      : "was one of the strongest areas";
+  }
+  if (score === weakest) {
+    return scores.filter((value) => value === weakest).length === 1
+      ? "was the weakest area"
+      : "was one of the weakest areas";
+  }
+  return "sat between the strongest and weakest areas";
+}
+
+function pillarSignalsLabel(pillarKey: PillarKey | null): string {
+  if (!pillarKey) return "relevant";
+  const labels: Record<PillarKey, string> = {
+    positioning: "positioning",
+    messaging: "messaging",
+    website_ux: "website and UX",
+    conversion: "conversion",
+    trust: "trust",
+    competition: "market and competition",
+    growth_foundation: "growth foundation",
+  };
+  return labels[pillarKey];
+}
+
+function isHomepageOnly(loaded: LoadedAuditContext): boolean {
+  const sources = loaded.context.sources;
+  const pagesAccepted =
+    loaded.context.investigation.pagesAccepted ?? sources.length;
+  return (
+    pagesAccepted === 1 &&
+    sources.length === 1 &&
+    sources[0]?.role === "homepage"
+  );
+}
+
+function withoutPublicPillarScores(
+  answer: string,
+  context: AuditContextPackV1
+): string {
+  let sanitized = answer;
+  for (const pillarKey of Object.keys(PILLAR_ALIASES) as PillarKey[]) {
+    const aliases = [PILLAR_LABELS[pillarKey], ...PILLAR_ALIASES[pillarKey]]
+      .sort((left, right) => right.length - left.length)
+      .map(escapeRegex)
+      .join("|");
+    const replacement = `${PILLAR_LABELS[pillarKey]} ${pillarStanding(
+      context,
+      pillarKey
+    )}`;
+    sanitized = sanitized
+      .replace(
+        new RegExp(
+          `\\b(?:${aliases})\\s+(?:scored|received|got|was\\s+rated)\\s+(?:(?:the\\s+)?(?:highest|lowest)\\s*)?(?:at\\s+)?\\(?\\*{0,2}\\d{1,3}(?:\\s*\\/\\s*100)?\\*{0,2}\\)?`,
+          "gi"
+        ),
+        replacement
+      )
+      .replace(
+        new RegExp(
+          `\\b(?:${aliases})\\s*(?:score\\s*)?[:=]\\s*\\*{0,2}\\d{1,3}(?:\\s*\\/\\s*100)?\\*{0,2}`,
+          "gi"
+        ),
+        replacement
+      );
+  }
+  return sanitized.replace(/\s{2,}/g, " ").trim();
+}
+
+export function applyPublicAuditQaPolicy(
+  answer: AuditQaAnswer,
+  loaded: LoadedAuditContext,
+  question: string
+): AuditQaAnswer {
+  const limitations = answer.limitations
+    .filter(
+      (limitation) =>
+        !/framework-weighted|score\s+is\s+.*calculation|single\s+page|homepage\s+inspection|crawler|debug/i.test(
+          limitation
+        )
+    )
+    .slice(0, 4);
+
+  if (isHomepageOnly(loaded)) {
+    limitations.push(
+      `Based on the homepage inspected for this audit; additional ${pillarSignalsLabel(
+        referencedPillar(question)
+      )} signals may exist elsewhere on the site.`
+    );
+  }
+
+  return {
+    ...answer,
+    answer: withoutPublicPillarScores(answer.answer, loaded.context)
+      .replace(/\s*\[(?:source\s+)?S\d+\]/gi, "")
+      .replace(/\b(?:source\s+)?S\d+\s*·?\s*/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .trim(),
+    limitations: [...new Set(limitations)],
+  };
 }
 
 export function fallbackGroundedAnswer(
@@ -316,7 +453,7 @@ export function fallbackGroundedAnswer(
       ? ` The leading stored weakness is: ${pillar.weaknesses[0]}`
       : "";
     return deterministicAnswer(
-      `${PILLAR_LABELS[pillarKey]} scored **${pillar.score}/100**. The stored audit basis is: ${pillar.reason}${gap} Confidence in that pillar was recorded as ${pillar.confidence || "unspecified"}.`,
+      `${PILLAR_LABELS[pillarKey]} ${pillarStanding(context, pillarKey)}. The stored audit basis is: ${pillar.reason}${gap} Confidence in that area was recorded as ${pillar.confidence || "unspecified"}.`,
       {
         citations: [],
         answerType: "score_explanation",
@@ -430,14 +567,41 @@ export function answerDeterministically(
     );
   }
 
+  if (route.type === "overall_score") {
+    return deterministicAnswer(
+      `The Growth Readiness Score was **${context.outcome.overallScore}/100**.`,
+      {
+        citations: [],
+        answerType: "score_explanation",
+        confidence: "high",
+        limitations: [],
+      }
+    );
+  }
+
+  if (route.type === "pillar_score") {
+    const pillar = context.pillars[route.pillar];
+    const gap = pillar.weaknesses[0]
+      ? ` The leading stored weakness is: ${pillar.weaknesses[0]}`
+      : "";
+    return deterministicAnswer(
+      `Verdict doesn't expose individual dimension scores. ${PILLAR_LABELS[
+        route.pillar
+      ]} ${pillarStanding(context, route.pillar)} in this audit because ${pillar.reason}${gap}`,
+      {
+        citations: [],
+        answerType: "score_explanation",
+        confidence:
+          pillar.confidence.toLowerCase() === "high" ? "high" : "medium",
+        limitations: [],
+      }
+    );
+  }
+
   if (route.type === "score_breakdown") {
     const breakdown = scoreBreakdown(context);
-    const lines = breakdown.lines.map(
-      (line) =>
-        `- ${line.label}: ${line.score} × ${Math.round(line.weight * 100)}% = ${line.contribution.toFixed(1)}`
-    );
     return deterministicAnswer(
-      `The score is calculated from the stored pillar scores and canonical weights:\n\n${lines.join("\n")}\n\nThe weighted total rounds to **${breakdown.total}/100**.`,
+      `The Growth Readiness Score is **${breakdown.total}/100**. It is calculated deterministically from seven weighted dimensions. Verdict doesn't expose the individual dimension scores.`,
       {
         citations: [],
         answerType: "score_explanation",
@@ -457,11 +621,8 @@ export function answerDeterministically(
       });
     }
     const result = counterfactualScore(context, route.overrides);
-    const changes = (Object.keys(route.overrides) as PillarKey[])
-      .map((key) => `${PILLAR_LABELS[key]} = ${result.scores[key]}`)
-      .join(", ");
     return deterministicAnswer(
-      `The stored score remains **${result.actual}/100**. With ${changes}, the deterministic counterfactual is **${result.counterfactual}/100**. This does not modify the report.`,
+      `The stored Growth Readiness Score remains **${result.actual}/100**. With the requested hypothetical dimension change, the deterministic counterfactual is **${result.counterfactual}/100**. This does not modify the report.`,
       {
         citations: [],
         answerType: "counterfactual",
@@ -473,16 +634,18 @@ export function answerDeterministically(
 
   if (route.type === "completeness") {
     const { stopReason, budgetUsage } = context.investigation;
+    const acceptedPages =
+      budgetUsage.pagesAccepted ?? budgetUsage.pagesInspected;
     const unsuccessfulAttempts = Math.max(
       0,
-      budgetUsage.pagesUsed - budgetUsage.pagesInspected
+      budgetUsage.pagesUsed - acceptedPages
     );
     const explanations: Record<typeof stopReason, string> = {
       sufficient:
         "The investigation stopped after its evidence-coverage threshold was reached.",
       page_budget: `The investigation used its maximum ${budgetUsage.maxPages}-page research budget.`,
       planning_round_budget: `The investigation used its maximum ${budgetUsage.maxPlanningRounds} planning rounds.`,
-      character_budget: `The investigation reached its ${budgetUsage.maxEvidenceChars.toLocaleString()}-character evidence budget after ${budgetUsage.pagesInspected} inspected pages.`,
+      character_budget: `The investigation reached its ${budgetUsage.maxEvidenceChars.toLocaleString()}-character evidence budget after ${acceptedPages} accepted evidence pages.`,
       gather_timeout:
         "The investigation stopped when its bounded evidence-gathering time expired.",
       discovery_failed:
@@ -494,7 +657,7 @@ export function answerDeterministically(
     };
     const attemptNote =
       unsuccessfulAttempts > 0
-        ? ` ${unsuccessfulAttempts} page attempt${unsuccessfulAttempts === 1 ? " did" : "s did"} not become a usable inspected source.`
+        ? ` ${unsuccessfulAttempts} page attempt${unsuccessfulAttempts === 1 ? " did" : "s did"} not become an accepted evidence source.`
         : "";
     return deterministicAnswer(
       `${explanations[stopReason]}${attemptNote} It was a bounded investigation, not an exhaustive crawl of the site.`,

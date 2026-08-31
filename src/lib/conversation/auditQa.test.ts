@@ -185,6 +185,21 @@ describe("grounded audit Q&A", () => {
     expect(JSON.stringify(answer)).not.toContain("HIDDEN_PROMPT");
   });
 
+  it("keeps numeric pillar scores out of the model context", () => {
+    const loaded = makeLoadedAuditContext();
+    const prompt = buildAuditQaPrompt({
+      question: "Why was Conversion the weakest area?",
+      loaded,
+    });
+
+    expect(prompt).toContain('"relativeStanding":"weakest"');
+    expect(prompt).not.toContain('"score":60');
+    expect(prompt).toContain('"overallScore":69');
+    expect(AUDIT_QA_SYSTEM_INSTRUCTION).toContain(
+      "numeric scores for individual"
+    );
+  });
+
   it("keeps malicious evidence as delimited data and excludes secret-shaped extras", () => {
     const loaded = makeLoadedAuditContext();
     Object.assign(loaded.context, { apiKey: "SECRET_API_KEY_SENTINEL" });
