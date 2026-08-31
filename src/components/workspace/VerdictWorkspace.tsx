@@ -11,10 +11,21 @@ import { WorkspaceTopBar } from "./WorkspaceTopBar";
 import { ContextualPanel } from "./ContextualPanel";
 import { readInvestigateStream } from "./sse";
 import type { AuditSummary, RecentInvestigation, WorkspaceMessage, WorkspacePhase } from "./types";
-import { conversationalAuditSummary } from "./investigationPresentation";
+import { conversationalAuditSummary, successfulEvidenceSources } from "./investigationPresentation";
 import type { PublicAuditQaMetadata } from "@/lib/conversation/auditAnswer";
 import type { HumanAuditUsageState } from "@/lib/humanAuditUsageContract";
 import { HumanAuditPaywallDialog } from "./HumanAuditPaywallDialog";
+import {
+  conversationModeForRequest,
+  conversationTimeoutForMode,
+  runPendingRequest,
+  type ConversationRequestMode,
+} from "./workspaceRequestState";
+import {
+  INITIAL_HUMAN_AUDIT_USAGE_STATE,
+  loadHumanAuditUsage,
+  readyHumanAuditUsage,
+} from "./humanAuditUsageState";
 
 const RECENTS_KEY = "verdict_recent_investigations";
 
@@ -33,16 +44,21 @@ function extractDomain(rawUrl: string): string {
 }
 
 function compactRecentResult(result: AuditSummary): AuditSummary {
-  const {
-    evidence: _evidence,
-    evidenceCoverage: _evidenceCoverage,
-    finalCoverage: _finalCoverage,
-    budgetUsage: _budgetUsage,
-    investigation: _investigation,
-    stopReason: _stopReason,
-    ...compact
-  } = result;
-  return compact;
+  return {
+    reportId: result.reportId,
+    overallScore: result.overallScore,
+    identity: result.identity,
+    pagesInspected: result.pagesInspected ?? successfulEvidenceSources(result.evidence).length,
+    evidence: result.evidence,
+    finalCoverage: result.finalCoverage,
+    stopReason: result.stopReason,
+    investigation: result.investigation,
+    company_name: result.company_name,
+    score_interpretation: result.score_interpretation,
+    the_verdict: result.the_verdict,
+    priority_matrix: result.priority_matrix,
+    pillars: result.pillars,
+  };
 }
 
 export function VerdictWorkspace() {
@@ -54,6 +70,8 @@ export function VerdictWorkspace() {
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const [hasCompletedAudit, setHasCompletedAudit] = useState(false);
   const [conversing, setConversing] = useState(false);
+  const [conversingMode, setConversingMode] =
+    useState<ConversationRequestMode>("thinking");
   const [activeReportId, setActiveReportId] = useState<string | undefined>();
   const [activeUrl, setActiveUrl] = useState<string | undefined>();
   const [activeDomain, setActiveDomain] = useState<string | undefined>();
@@ -61,8 +79,10 @@ export function VerdictWorkspace() {
   const [activeScore, setActiveScore] = useState<number | undefined>();
   const [activeResult, setActiveResult] = useState<AuditSummary | undefined>();
   const [startTime, setStartTime] = useState<number | null>(null);
-  const [humanAuditUsage, setHumanAuditUsage] =
-    useState<HumanAuditUsageState | null>(null);
+  const [humanAuditUsageState, setHumanAuditUsageState] = useState(
+    INITIAL_HUMAN_AUDIT_USAGE_STATE
+  );
+  const humanAuditUsage = humanAuditUsageState.usage;
   const [pendingAuditUrl, setPendingAuditUrl] = useState<string | null>(null);
 
   // Layout states
@@ -80,6 +100,14 @@ export function VerdictWorkspace() {
 
   const investigating = phase === "investigating";
   const busy = investigating || conversing;
+
+  const applyHumanAuditUsage = (usage: HumanAuditUsageState) => {
+    setHumanAuditUsageState(readyHumanAuditUsage(usage));
+  };
+
+  const refreshHumanAuditUsage = () => {
+    void loadHumanAuditUsage().then(setHumanAuditUsageState);
+  };
 
   // Load recents on mount
   useEffect(() => {
@@ -102,15 +130,9 @@ export function VerdictWorkspace() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/usage", { method: "GET" })
-      .then(async (response) => {
-        if (!response.ok) return null;
-        return (await response.json()) as HumanAuditUsageState;
-      })
-      .then((usage) => {
-        if (!cancelled && usage) setHumanAuditUsage(usage);
-      })
-      .catch(() => undefined);
+    void loadHumanAuditUsage().then((state) => {
+      if (!cancelled) setHumanAuditUsageState(state);
+    });
     return () => {
       cancelled = true;
     };
@@ -276,9 +298,11 @@ export function VerdictWorkspace() {
           };
           retryAfterSeconds = payload.retryAfterSeconds;
           message = payload.message;
-          if (payload.usage) setHumanAuditUsage(payload.usage);
+          if (payload.usage) applyHumanAuditUsage(payload.usage);
+          else refreshHumanAuditUsage();
         } catch {
           retryAfterSeconds = undefined;
+          refreshHumanAuditUsage();
         }
         setPhase(hasCompletedAudit ? "complete" : "idle");
         reply(message || rateLimitReply(retryAfterSeconds));
@@ -296,6 +320,7 @@ export function VerdictWorkspace() {
           message: payload.error || "I couldn't complete that investigation. Please check the URL and try again.",
           domain,
         });
+        refreshHumanAuditUsage();
         return;
       }
 
@@ -311,7 +336,9 @@ export function VerdictWorkspace() {
           setActiveScore(result.overallScore);
           setActiveResult(result);
           if (result.humanAuditUsage) {
-            setHumanAuditUsage(result.humanAuditUsage);
+            applyHumanAuditUsage(result.humanAuditUsage);
+          } else {
+            refreshHumanAuditUsage();
           }
 
           const traceMsg: WorkspaceMessage = {
@@ -370,6 +397,7 @@ export function VerdictWorkspace() {
             message: error || "The investigation encountered an error and could not complete.",
             domain,
           });
+          refreshHumanAuditUsage();
         },
       });
     } catch (error: unknown) {
@@ -385,6 +413,7 @@ export function VerdictWorkspace() {
         message: "The investigation stream was interrupted. Please try again.",
         domain,
       });
+      refreshHumanAuditUsage();
     }
   };
 
@@ -421,66 +450,88 @@ export function VerdictWorkspace() {
       return;
     }
 
+    const mode = conversationModeForRequest(
+      text,
+      hasCompletedAudit && Boolean(activeResult)
+    );
+    setConversingMode(mode);
+
     posthog?.capture("conversation_message");
-    void askVerdict(nextMessages);
+    void askVerdict(nextMessages, mode);
   };
 
-  const askVerdict = async (thread: WorkspaceMessage[]) => {
+  const askVerdict = async (
+    thread: WorkspaceMessage[],
+    mode: ConversationRequestMode
+  ) => {
     inFlightRef.current = true;
     setConversing(true);
-    try {
-      const history = thread
-        .filter((message): message is Extract<WorkspaceMessage, { kind: "text" }> => message.kind === "text")
-        .slice(-10)
-        .map((message) => ({
-          role: message.role === "user" ? "user" : "assistant",
-          content: message.content,
-        }));
+    await runPendingRequest({
+      request: async () => {
+        const history = thread
+          .filter(
+            (
+              message
+            ): message is Extract<WorkspaceMessage, { kind: "text" }> =>
+              message.kind === "text"
+          )
+          .slice(-10)
+          .map((message) => ({
+            role: message.role === "user" ? "user" : "assistant",
+            content: message.content,
+          }));
 
-      const response = await fetch("/api/conversation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: history,
-          activeReportId,
-          knownAudits: recents.flatMap((item) =>
-            item.reportId
-              ? [
-                  {
-                    reportId: item.reportId,
-                    companyName: item.companyName,
-                    domain: item.domain,
-                  },
-                ]
-              : []
-          ),
-        }),
-      });
+        const response = await fetch("/api/conversation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(conversationTimeoutForMode(mode)),
+          body: JSON.stringify({
+            messages: history,
+            activeReportId,
+            knownAudits: recents.flatMap((item) =>
+              item.reportId
+                ? [
+                    {
+                      reportId: item.reportId,
+                      companyName: item.companyName,
+                      domain: item.domain,
+                    },
+                  ]
+                : []
+            ),
+          }),
+        });
 
-      const payload = (await response.json().catch(() => null)) as {
-        action?: string;
-        message?: string;
-        url?: string | null;
-        auditQa?: PublicAuditQaMetadata;
-        usage?: HumanAuditUsageState;
-      } | null;
+        const payload = (await response.json().catch(() => null)) as {
+          action?: string;
+          message?: string;
+          url?: string | null;
+          auditQa?: PublicAuditQaMetadata;
+          usage?: HumanAuditUsageState;
+        } | null;
 
-      if (payload?.usage) setHumanAuditUsage(payload.usage);
+        if (payload?.usage) applyHumanAuditUsage(payload.usage);
 
-      if (payload?.action === "start_audit" && payload.url) {
-        posthog?.capture("audit_intent", { source: "conversation" });
-        if (payload.message) reply(payload.message);
-        await runInvestigation(payload.url);
-        return;
-      }
+        return payload;
+      },
+      onSuccess: async (payload) => {
+        if (payload?.action === "start_audit" && payload.url) {
+          posthog?.capture("audit_intent", { source: "conversation" });
+          if (payload.message) reply(payload.message);
+          await runInvestigation(payload.url);
+          return;
+        }
 
-      reply(payload?.message || FALLBACK_REPLY, payload?.auditQa);
-    } catch {
-      reply(FALLBACK_REPLY);
-    } finally {
-      setConversing(false);
-      inFlightRef.current = false;
-    }
+        reply(payload?.message || FALLBACK_REPLY, payload?.auditQa);
+      },
+      onError: () => {
+        reply(FALLBACK_REPLY);
+      },
+      onSettled: () => {
+        setConversing(false);
+        inFlightRef.current = false;
+      },
+    });
   };
 
   const idle = messages.length === 0 && !busy;
@@ -499,6 +550,7 @@ export function VerdictWorkspace() {
         isMobileOpen={isMobileSidebarOpen}
         onMobileClose={() => setIsMobileSidebarOpen(false)}
         humanAuditUsage={humanAuditUsage}
+        humanAuditUsageStatus={humanAuditUsageState.status}
       />
 
       {/* 2. Center Workspace */}
@@ -554,6 +606,7 @@ export function VerdictWorkspace() {
                     liveEvents={liveEvents}
                     investigating={investigating}
                     pendingReply={conversing}
+                    pendingReplyMode={conversingMode}
                     activeDomain={activeDomain}
                     startTime={startTime}
                     onOpenRightPanel={() => {
@@ -580,7 +633,9 @@ export function VerdictWorkspace() {
                       investigating
                         ? "Investigation in progress…"
                         : conversing
-                          ? "Verdict is reviewing evidence…"
+                          ? conversingMode === "followup"
+                            ? "Verdict is reviewing evidence…"
+                            : "Thinking…"
                           : "Ask Verdict a question about this audit…"
                     }
                   />
@@ -609,7 +664,7 @@ export function VerdictWorkspace() {
         <HumanAuditPaywallDialog
           usage={humanAuditUsage}
           auditUrl={pendingAuditUrl}
-          onUsage={setHumanAuditUsage}
+          onUsage={applyHumanAuditUsage}
           onClose={() => setPendingAuditUrl(null)}
           onRunAudit={() => {
             const url = pendingAuditUrl;

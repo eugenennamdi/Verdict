@@ -14,15 +14,21 @@ type MessageListProps = {
   liveEvents: ActivityEvent[];
   investigating: boolean;
   pendingReply?: boolean;
+  pendingReplyMode?: "thinking" | "followup";
   activeDomain?: string;
   startTime?: number | null;
   onOpenRightPanel?: () => void;
   onRetry?: () => void;
 };
 
-function sourceLabel(path: string, category?: string): string {
+function sourceLabel(
+  path: string,
+  role?: "homepage" | "supporting",
+  category?: string
+): string {
+  if (role === "homepage") return "Homepage";
   const segment = path.split("/").filter(Boolean).at(-1);
-  const value = segment || category || "Homepage";
+  const value = segment || category || (role === "supporting" ? "Supporting page" : "Source");
   return value
     .replace(/[-_]+/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -37,6 +43,7 @@ export function MessageList({
   liveEvents,
   investigating,
   pendingReply,
+  pendingReplyMode = "thinking",
   activeDomain,
   startTime,
   onOpenRightPanel,
@@ -64,7 +71,15 @@ export function MessageList({
                 <VerdictLogo className="size-4" />
               </div>
               <div className="flex-1 min-w-0">
-                <FormattedMessage content={message.content} />
+                <FormattedMessage
+                  content={
+                    message.auditQa
+                      ? message.content
+                          .replace(/\s*\[(?:source\s+)?S\d+\]/gi, "")
+                          .replace(/\b(?:source\s+)?S\d+\s*·?\s*/gi, "")
+                      : message.content
+                  }
+                />
                 {message.auditQa &&
                   (message.auditQa.citations.length > 0 ||
                     message.auditQa.limitations.length > 0) && (
@@ -80,7 +95,7 @@ export function MessageList({
                               className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600 transition-colors hover:border-orange-300 hover:text-orange-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
                             >
                               <span className="block font-bold text-slate-800 dark:text-slate-100">
-                                {source.sourceId} · {sourceLabel(source.path, source.category)}
+                                Source · {sourceLabel(source.path, source.role, source.category)}
                               </span>
                               <span className="block text-[11px] text-slate-500 dark:text-slate-400">
                                 {compactSourceUrl(source.url)}
@@ -117,16 +132,6 @@ export function MessageList({
         if (message.kind === "result") {
           return (
             <div key={message.id} className="space-y-4">
-              {message.summary && (
-                <div className="flex items-start gap-3 max-w-[95%]">
-                  <div className="flex size-5 shrink-0 items-center justify-center text-orange-500 mt-0.5">
-                    <VerdictLogo className="size-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <FormattedMessage content={message.summary} />
-                  </div>
-                </div>
-              )}
               <AuditResultCard
                 result={message.result}
                 onOpenAuditContext={onOpenRightPanel}
@@ -169,7 +174,7 @@ export function MessageList({
       {/* Pending Conversational Reply Indicator */}
       {pendingReply && (
         <AgentLoadingState
-          mode="thinking"
+          mode={pendingReplyMode}
           startTime={startTime}
         />
       )}

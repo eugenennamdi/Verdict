@@ -1,14 +1,18 @@
 "use client";
 
-import type { HumanAuditQuotaState } from "@/lib/humanAuditQuotaContract";
+import { useState } from "react";
+import { Gauge, ChevronDown } from "lucide-react";
 import type { HumanAuditUsageState } from "@/lib/humanAuditUsageContract";
+import type { HumanAuditUsageStatus } from "./humanAuditUsageState";
 
-type HumanAuditQuotaIndicatorProps = {
-  usage: HumanAuditUsageState;
+export type HumanAuditQuotaIndicatorProps = {
+  usage: HumanAuditUsageState | null;
+  status?: HumanAuditUsageStatus;
   compact?: boolean;
+  defaultOpen?: boolean;
 };
 
-function remainingDuration(nextAvailableAt: string, nowMs: number): string {
+export function remainingDuration(nextAvailableAt: string, nowMs = Date.now()): string {
   const remainingMs = Math.max(0, Date.parse(nextAvailableAt) - nowMs);
   const totalMinutes = Math.max(1, Math.ceil(remainingMs / 60_000));
   const hours = Math.floor(totalMinutes / 60);
@@ -19,90 +23,106 @@ function remainingDuration(nextAvailableAt: string, nowMs: number): string {
   return `${hours}h ${minutes}m`;
 }
 
-export function humanAuditQuotaSecondaryCopy(
-  quota: HumanAuditQuotaState,
-  nowMs = Date.now()
-): string {
-  if (quota.remaining > 0 || !quota.nextAvailableAt) {
-    return "24h rolling limit";
-  }
-  return `Resets in ${remainingDuration(quota.nextAvailableAt, nowMs)}`;
-}
-
-function QuotaRing({ quota }: { quota: HumanAuditQuotaState }) {
-  const remaining = Math.max(0, Math.min(3, quota.remaining));
-  const label = `${quota.remaining} of ${quota.limit} free audits remaining`;
-
-  return (
-    <span
-      role="img"
-      aria-label={label}
-      className="relative inline-flex size-9 shrink-0 items-center justify-center"
-      title={label}
-    >
-      <svg viewBox="0 0 40 40" className="size-9 -rotate-90" aria-hidden="true">
-        {[0, 1, 2].map((segment) => (
-          <circle
-            key={segment}
-            cx="20"
-            cy="20"
-            r="15"
-            fill="none"
-            pathLength="100"
-            stroke="currentColor"
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeDasharray="27 73"
-            strokeDashoffset={-segment * 33.333}
-            className={
-              segment < remaining
-                ? "text-orange-500"
-                : "text-slate-200 dark:text-slate-700"
-            }
-          />
-        ))}
-      </svg>
-    </span>
-  );
-}
-
 export function HumanAuditQuotaIndicator({
   usage,
+  status = usage ? "ready" : "loading",
   compact = false,
+  defaultOpen = false,
 }: HumanAuditQuotaIndicatorProps) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const statusCopy = status === "unavailable" ? "unavailable" : "loading";
+
   if (compact) {
     return (
-      <div
-        className="flex flex-col items-center pb-1"
-        aria-label="Free audit quota"
-      >
-        <QuotaRing quota={usage.free} />
+      <div className="flex flex-col items-center py-1">
+        <div
+          role="img"
+          className="flex size-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200/50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-white transition-colors"
+          title={usage ? `Usage: ${usage.free.remaining}/${usage.free.limit} free audits` : `Usage: ${statusCopy}`}
+          aria-label={usage ? `Usage: ${usage.free.remaining} of ${usage.free.limit} free audits remaining` : `Usage: ${statusCopy}`}
+        >
+          <Gauge className="size-4" />
+        </div>
       </div>
     );
   }
 
   return (
     <section
-      aria-label="Free audit quota"
-      className="mb-2 rounded-xl border border-slate-200/80 bg-white/65 p-2.5 dark:border-slate-800 dark:bg-slate-900/45"
+      aria-label="Usage disclosure"
+      className="rounded-xl border border-slate-200/70 bg-white/50 p-1.5 dark:border-slate-800/70 dark:bg-slate-900/30 transition-colors"
     >
-      <div className="flex items-center gap-2.5">
-        <QuotaRing quota={usage.free} />
-        <div className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-            Free audits
-          </p>
-          <p className="text-[12px] font-semibold text-slate-900 dark:text-white">
-            {usage.free.remaining} of {usage.free.limit} left
-          </p>
-          <p className="text-[10px] text-slate-400 dark:text-slate-500">
-            {humanAuditQuotaSecondaryCopy(usage.free)}
-          </p>
-          {usage.paid.available > 0 ? (
-            <p className="mt-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
-              1 paid audit ready
-            </p>
-          ) : null}
+      <button
+        type="button"
+        id="sidebar-usage-trigger"
+        aria-expanded={isOpen}
+        aria-controls="sidebar-usage-details"
+        onClick={() => setIsOpen((prev) => !prev)}
+        className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1 text-left text-[12.5px] font-medium text-slate-700 hover:bg-slate-200/40 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/50 dark:hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950/20 dark:focus-visible:ring-white/20"
+      >
+        <div className="flex items-center gap-2">
+          <Gauge className="size-3.5 shrink-0 text-slate-500 dark:text-slate-400" />
+          <span>Usage</span>
+        </div>
+        <ChevronDown
+          className={`size-3.5 shrink-0 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${
+            isOpen ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      <div
+        id="sidebar-usage-details"
+        role="region"
+        aria-labelledby="sidebar-usage-trigger"
+        className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
+          isOpen
+            ? "grid-rows-[1fr] opacity-100 mt-1 pt-1.5 border-t border-slate-200/60 dark:border-slate-800/60"
+            : "grid-rows-[0fr] opacity-0 pointer-events-none"
+        }`}
+      >
+        <div className="overflow-hidden space-y-1.5 px-2 pb-1 text-[11.5px]">
+          {usage ? (
+            <>
+              {/* Free audits */}
+              <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
+                <span>Free audits</span>
+                <span className="font-medium text-slate-900 dark:text-white tabular-nums">
+                  {usage.free.remaining} / {usage.free.limit}
+                </span>
+              </div>
+
+              {/* Reset timer (if nextAvailableAt exists) */}
+              {usage.free.nextAvailableAt ? (
+                <div className="flex items-center justify-between text-slate-500 dark:text-slate-500 text-[11px]">
+                  <span>Resets in</span>
+                  <span className="tabular-nums">
+                    {remainingDuration(usage.free.nextAvailableAt)}
+                  </span>
+                </div>
+              ) : null}
+
+              {/* Paid audits */}
+              <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
+                <span>Paid audits</span>
+                {usage.paid.available > 0 ? (
+                  <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                    {usage.paid.available} ready
+                  </span>
+                ) : (
+                  <span className="font-medium text-slate-500 dark:text-slate-400 tabular-nums">
+                    0
+                  </span>
+                )}
+              </div>
+            </>
+          ) : status === "unavailable" ? (
+            <div className="text-slate-400 dark:text-slate-500">
+              Usage unavailable
+            </div>
+          ) : (
+            <div className="text-slate-400 dark:text-slate-500">Loading…</div>
+          )}
         </div>
       </div>
     </section>

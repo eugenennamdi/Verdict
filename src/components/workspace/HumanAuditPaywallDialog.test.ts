@@ -78,10 +78,11 @@ describe("exhausted-quota payment preview", () => {
   it("explains the audit price and asks a disconnected visitor to connect", () => {
     const html = renderDialog();
     expect(html).toContain("You&#x27;ve used your free audits");
-    expect(html).toContain("$0.50 USDC");
+    expect(html).toContain("0.5 USDC");
     expect(html).toContain("Connect your wallet to continue.");
     expect(html).toContain("Connect Wallet");
-    expect(html).toContain("example.com");
+    expect(html).toContain("Target URL");
+    expect(html).toContain("https://example.com/pricing");
     expect(html).not.toContain("Continue · $0.50");
   });
 
@@ -94,7 +95,7 @@ describe("exhausted-quota payment preview", () => {
     walletState.walletClient = {};
     const html = renderDialog();
     expect(html).toContain("Switch to Base Sepolia");
-    expect(html).toContain("Switch your wallet to Base Sepolia to complete the $0.50 USDC payment.");
+    expect(html).toContain("Switch your wallet to Base Sepolia to complete the 0.5 USDC payment.");
     expect(html).not.toContain("Connect your wallet to continue.");
   });
 
@@ -106,16 +107,19 @@ describe("exhausted-quota payment preview", () => {
     };
     walletState.walletClient = {};
     const html = renderDialog();
-    expect(html).toContain("Pay $0.50 USDC");
-    expect(html).toContain("Run another complete Verdict audit for $0.50 USDC on Base Sepolia.");
+    expect(html).toContain("Pay 0.5 USDC");
+    expect(html).toContain("Run another audit for 0.5 USDC on Base Sepolia.");
     expect(html).not.toContain("Connect your wallet to continue.");
+    expect(html).not.toContain("One autonomous growth investigation");
+    expect(html).toContain("Base Sepolia");
+    expect(html).not.toContain("Base Sepolia / testnet");
   });
 
-  it("runs the audit and shows audit-ready copy instead of offering another payment when entitlement exists", () => {
+  it("runs the audit and shows Payment Confirmed with checkmark instead of offering another payment when entitlement exists", () => {
     const html = renderDialog(usage(1));
     expect(html).toContain("Run Audit");
-    expect(html).toContain("Audit ready");
-    expect(html).toContain("Your payment is confirmed. You can now start the investigation.");
+    expect(html).toContain("Payment Confirmed");
+    expect(html).not.toContain("Your payment is confirmed. You can now start the investigation.");
     expect(html).not.toContain("Connect your wallet to continue.");
     expect(paywallAction(0, false, false)).toBe("connect");
     expect(paywallAction(0, true, false)).toBe("switch");

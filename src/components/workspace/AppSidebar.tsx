@@ -19,6 +19,7 @@ import { useTheme } from "next-themes";
 import { HumanAuditQuotaIndicator } from "./HumanAuditQuotaIndicator";
 import type { RecentInvestigation } from "./types";
 import type { HumanAuditUsageState } from "@/lib/humanAuditUsageContract";
+import type { HumanAuditUsageStatus } from "./humanAuditUsageState";
 
 export const VerdictLogo = ({ className }: { className?: string }) => (
   <svg
@@ -93,6 +94,7 @@ type AppSidebarProps = {
   isMobileOpen?: boolean;
   onMobileClose?: () => void;
   humanAuditUsage: HumanAuditUsageState | null;
+  humanAuditUsageStatus?: HumanAuditUsageStatus;
 };
 
 export function AppSidebar({
@@ -106,6 +108,7 @@ export function AppSidebar({
   isMobileOpen,
   onMobileClose,
   humanAuditUsage,
+  humanAuditUsageStatus,
 }: AppSidebarProps) {
   const { theme, setTheme } = useTheme();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
@@ -304,20 +307,19 @@ export function AppSidebar({
       )}
 
       {/* Bottom Nav: For Agents & Documentation */}
-      <div className={`border-t border-slate-200/80 dark:border-slate-800/80 ${isCollapsed ? "p-2 space-y-2" : "p-3 space-y-2"}`}>
-        {humanAuditUsage ? (
-          <HumanAuditQuotaIndicator
-            usage={humanAuditUsage}
-            compact={isCollapsed}
-          />
-        ) : null}
+      <div className={`border-t border-slate-200/80 dark:border-slate-800/80 ${isCollapsed ? "p-2 space-y-2" : "p-2.5 space-y-2"}`}>
+        <HumanAuditQuotaIndicator
+          usage={humanAuditUsage}
+          status={humanAuditUsageStatus}
+          compact={isCollapsed}
+        />
 
         {!isCollapsed ? (
           <div className="flex flex-col gap-0.5">
             <Link
               href="/agents"
               onClick={() => onMobileClose?.()}
-              className="group flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-200/50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-white"
+              className="group flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-slate-600 transition-colors hover:bg-slate-200/50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-white"
               title="For Agents (API & SDK)"
             >
               <Bot className="size-4 shrink-0 text-slate-500 dark:text-slate-400" />
@@ -327,7 +329,7 @@ export function AppSidebar({
             <Link
               href="/docs"
               onClick={() => onMobileClose?.()}
-              className="group flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-200/50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-white"
+              className="group flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-slate-600 transition-colors hover:bg-slate-200/50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-white"
               title="Documentation"
             >
               <BookOpen className="size-4 shrink-0 text-slate-500 dark:text-slate-400" />
@@ -335,38 +337,38 @@ export function AppSidebar({
             </Link>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-1.5">
+          <div className="flex flex-col items-center gap-1">
             <Link
               href="/agents"
               onClick={() => onMobileClose?.()}
-              className="flex size-9 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-200/50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-white transition-colors"
+              className="flex size-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200/50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-white transition-colors"
               title="For Agents (API & SDK)"
             >
-              <Bot className="size-4.5" />
+              <Bot className="size-4" />
             </Link>
 
             <Link
               href="/docs"
               onClick={() => onMobileClose?.()}
-              className="flex size-9 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-200/50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-white transition-colors"
+              className="flex size-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200/50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-white transition-colors"
               title="Documentation"
             >
-              <BookOpen className="size-4.5" />
+              <BookOpen className="size-4" />
             </Link>
           </div>
         )}
 
         {/* Footer Controls: Theme & More Menu */}
-        <div className="pt-1 border-t border-slate-200/60 dark:border-slate-800/60">
+        <div className="pt-1.5 border-t border-slate-200/60 dark:border-slate-800/60">
           {!isCollapsed ? (
             <div className="flex items-center justify-between gap-2">
               {/* Theme Toggle */}
               {mounted ? (
-                <div className="flex items-center gap-0.5 rounded-xl bg-slate-200/60 p-1 dark:bg-slate-900">
+                <div className="flex items-center gap-0.5 rounded-lg bg-slate-200/60 p-0.5 dark:bg-slate-900">
                   <button
                     type="button"
                     onClick={() => setTheme("system")}
-                    className={`size-6 rounded-lg flex items-center justify-center transition-colors ${
+                    className={`size-6 rounded-md flex items-center justify-center transition-colors ${
                       theme === "system"
                         ? "bg-white text-slate-900 shadow-xs dark:bg-slate-800 dark:text-white"
                         : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
@@ -379,7 +381,7 @@ export function AppSidebar({
                   <button
                     type="button"
                     onClick={() => setTheme("light")}
-                    className={`size-6 rounded-lg flex items-center justify-center transition-colors ${
+                    className={`size-6 rounded-md flex items-center justify-center transition-colors ${
                       theme === "light"
                         ? "bg-white text-slate-900 shadow-xs dark:bg-slate-800 dark:text-white"
                         : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
@@ -392,7 +394,7 @@ export function AppSidebar({
                   <button
                     type="button"
                     onClick={() => setTheme("dark")}
-                    className={`size-6 rounded-lg flex items-center justify-center transition-colors ${
+                    className={`size-6 rounded-md flex items-center justify-center transition-colors ${
                       theme === "dark"
                         ? "bg-white text-slate-900 shadow-xs dark:bg-slate-800 dark:text-white"
                         : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
@@ -404,7 +406,7 @@ export function AppSidebar({
                   </button>
                 </div>
               ) : (
-                <div className="h-8 w-20 rounded-xl bg-slate-200/60 dark:bg-slate-900" />
+                <div className="h-7 w-20 rounded-lg bg-slate-200/60 dark:bg-slate-900" />
               )}
 
               {/* More Menu Dropdown */}
@@ -412,7 +414,7 @@ export function AppSidebar({
                 <button
                   type="button"
                   onClick={() => setIsMoreOpen((prev) => !prev)}
-                  className={`flex size-8 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-200/60 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-white transition-colors ${
+                  className={`flex size-7 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200/60 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-white transition-colors ${
                     isMoreOpen ? "bg-slate-200/60 dark:bg-slate-900 text-slate-900 dark:text-white" : ""
                   }`}
                   title="More options"

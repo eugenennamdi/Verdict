@@ -1,5 +1,6 @@
 import type { ActivityEvent } from "@/lib/audit/events";
 import type {
+  EvidenceCategory,
   EvidenceCoverage,
   EvidenceCoverageAssessment,
   EvidencePageSummary,
@@ -29,10 +30,30 @@ export type AuditSummary = {
   evidenceCoverage?: EvidenceCoverage;
   finalCoverage?: EvidenceCoverageAssessment;
   pagesInspected?: number;
+  pagesAccepted?: number;
+  audit_context?: {
+    sources?: Array<{
+      sourceId?: string;
+      url: string;
+      path?: string;
+      role?: "homepage" | "supporting";
+      category?: EvidenceCategory;
+    }>;
+  };
+  auditContext?: {
+    sources?: Array<{
+      sourceId?: string;
+      url: string;
+      path?: string;
+      role?: "homepage" | "supporting";
+      category?: EvidenceCategory;
+    }>;
+  };
   budgetUsage?: EvidenceBudgetUsage;
   stopReason?: EvidenceGatherStopReason;
   investigation?: {
     candidatesDiscovered: number;
+    candidatesRetained?: number;
     planningRounds: number;
     pageAttempts: number;
     stopReason: EvidenceGatherStopReason;
@@ -77,4 +98,4 @@ export type WorkspaceMessage =
   | { id: string; role: "verdict"; kind: "result"; summary: string; result: AuditSummary; domain?: string }
   | { id: string; role: "verdict"; kind: "error"; message: string; domain?: string };
 
-export type WorkspacePhase = "idle" | "investigating" | "complete";
+export type WorkspacePhase = "idle" | "investigating" | "complete" | "failed";
