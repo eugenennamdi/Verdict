@@ -406,4 +406,34 @@ describe("Canonical Report Truth & Grounded Q&A Invariants", () => {
     expect(restored.primaryBottleneck).toBe(canonical.primaryBottleneck);
     expect(restored.priorities[0]?.task).toBe(canonical.priorities[0]?.task);
   });
+
+  it("does not fabricate strongest or weakest Q&A when authoritative ranking data is absent", () => {
+    const context = structuredClone(LINEAR_AUDIT_CONTEXT);
+    context.pillars = {} as AuditContextPackV1["pillars"];
+    const loaded: LoadedAuditContext = {
+      ...LOADED_LINEAR_CONTEXT,
+      context,
+    };
+
+    const strongest = answerDeterministically(
+      { type: "strongest_dimension" },
+      loaded,
+      "What is the strongest pillar?"
+    )!;
+    const weakest = fallbackGroundedAnswer(
+      loaded,
+      "Why is Growth Foundation the weakest?"
+    );
+
+    expect(strongest.answer).toContain(
+      "does not contain enough authoritative ranking data"
+    );
+    expect(weakest.answer).toContain(
+      "does not contain enough authoritative ranking data"
+    );
+    expect(strongest.answer).not.toContain("Positioning was the strongest");
+    expect(weakest.answer).not.toContain(
+      "Growth Foundation was the weakest"
+    );
+  });
 });

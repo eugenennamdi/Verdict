@@ -73,12 +73,19 @@ export type CanonicalReportFacts = {
 };
 
 export type CanonicalReportProjection = {
+  reportId?: string;
   companyName: string;
+  description?: string;
   overallScore: number;
-  strongestDimension: { key: PillarKey; label: string };
-  weakestDimension: { key: PillarKey; label: string };
+  executiveAssessment?: string;
+  dimensionRankingAvailable?: boolean;
+  strongestDimension?: { key: PillarKey; label: string };
+  weakestDimension?: { key: PillarKey; label: string };
   primaryBottleneck: string;
   highestOpportunity: string;
+  estimatedImpact?: string;
+  priorities?: CanonicalPriorityFact[];
+  /** Retained for compatibility with projections cached before priorities were first-class. */
   topPriority: string;
 };
 
@@ -177,11 +184,13 @@ export function deriveCanonicalReportFacts(raw: unknown): CanonicalReportFacts {
     "Target Startup";
 
   const description =
+    stringVal(projectedFacts.description) ||
     stringVal(identity.inferred_description) ||
     stringVal(context.inferred_description) ||
     "";
 
   const executiveAssessment =
+    stringVal(projectedFacts.executiveAssessment) ||
     stringVal(outcome.scoreInterpretation) ||
     stringVal(context.score_interpretation) ||
     stringVal(context.executive_summary) ||
@@ -197,7 +206,9 @@ export function deriveCanonicalReportFacts(raw: unknown): CanonicalReportFacts {
   const highestOpportunity =
     stringVal(projectedFacts.highestOpportunity) ||
     stringVal(finalVerdict.highest_opportunity);
-  const estimatedImpact = stringVal(finalVerdict.estimated_impact);
+  const estimatedImpact =
+    stringVal(projectedFacts.estimatedImpact) ||
+    stringVal(finalVerdict.estimated_impact);
 
   // Extract raw pillars
   const rawPillarsObj =
@@ -210,15 +221,19 @@ export function deriveCanonicalReportFacts(raw: unknown): CanonicalReportFacts {
           : {};
 
   // Extract priorities
-  const rawPriorities = Array.isArray(context.priorityMatrix)
-    ? context.priorityMatrix
-    : Array.isArray(context.priority_matrix)
-      ? context.priority_matrix
-      : Array.isArray(context.top_5_priorities)
-        ? context.top_5_priorities
-        : Array.isArray(obj.top_5_priorities)
-          ? obj.top_5_priorities
-          : [];
+  const rawPriorities = Array.isArray(projectedFacts.priorities)
+    ? projectedFacts.priorities
+    : Array.isArray(context.priorityMatrix)
+      ? context.priorityMatrix
+      : Array.isArray(context.priority_matrix)
+        ? context.priority_matrix
+        : Array.isArray(context.top_5_priorities)
+          ? context.top_5_priorities
+          : Array.isArray(obj.top_5_priorities)
+            ? obj.top_5_priorities
+            : stringVal(projectedFacts.topPriority)
+              ? [{ task: stringVal(projectedFacts.topPriority) }]
+              : [];
 
   const priorities: CanonicalPriorityFact[] = rawPriorities
     .filter(isRecord)
@@ -433,18 +448,28 @@ export function projectCanonicalReportFacts(
 ): CanonicalReportProjection {
   const facts = deriveCanonicalReportFacts(raw);
   return {
+    ...(facts.reportId ? { reportId: facts.reportId } : {}),
     companyName: facts.companyName,
+    description: facts.description,
     overallScore: facts.overallScore,
-    strongestDimension: {
-      key: facts.strongestDimension.key,
-      label: facts.strongestDimension.label,
-    },
-    weakestDimension: {
-      key: facts.weakestDimension.key,
-      label: facts.weakestDimension.label,
-    },
+    executiveAssessment: facts.executiveAssessment,
+    dimensionRankingAvailable: facts.dimensionRankingAvailable,
+    ...(facts.dimensionRankingAvailable
+      ? {
+          strongestDimension: {
+            key: facts.strongestDimension.key,
+            label: facts.strongestDimension.label,
+          },
+          weakestDimension: {
+            key: facts.weakestDimension.key,
+            label: facts.weakestDimension.label,
+          },
+        }
+      : {}),
     primaryBottleneck: facts.primaryBottleneck,
     highestOpportunity: facts.highestOpportunity,
+    estimatedImpact: facts.estimatedImpact,
+    priorities: facts.priorities.map((priority) => ({ ...priority })),
     topPriority: facts.priorities[0]?.task || "",
   };
 }

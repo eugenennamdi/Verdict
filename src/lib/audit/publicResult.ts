@@ -16,7 +16,7 @@ export type PublicAuditSource = {
   keyFindings?: string[];
 };
 
-function toPublicPillars(
+export function projectPublicPillars(
   pillars: Record<string, unknown> | undefined
 ): Record<string, PublicPillar> {
   if (!pillars || typeof pillars !== "object") return {};
@@ -71,7 +71,7 @@ export function summarizeVerdictAuditResult(result: RunVerdictAuditResult) {
     the_verdict: result.audit.the_verdict,
     score_interpretation: result.audit.score_interpretation,
     priority_matrix: result.audit.priority_matrix,
-    pillars: toPublicPillars(result.audit.pillars as Record<string, unknown>),
+    pillars: projectPublicPillars(result.audit.pillars as Record<string, unknown>),
     sources: toPublicSources(result),
     pagesInspected: result.pagesInspected,
     pagesAccepted: result.pagesAccepted,

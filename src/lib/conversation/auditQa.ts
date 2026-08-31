@@ -140,8 +140,12 @@ function groundedContext(loaded: LoadedAuditContext) {
     canonicalReportConclusions: {
       companyName: facts.companyName,
       overallScore: facts.overallScore,
-      strongestDimension: facts.strongestDimension.label,
-      weakestDimension: facts.weakestDimension.label,
+      ...(facts.dimensionRankingAvailable
+        ? {
+            strongestDimension: facts.strongestDimension.label,
+            weakestDimension: facts.weakestDimension.label,
+          }
+        : {}),
       primaryBottleneck: facts.primaryBottleneck,
       highestOpportunity: facts.highestOpportunity,
       topPriority: facts.priorities[0]?.task || "N/A",
@@ -175,8 +179,12 @@ function groundedContext(loaded: LoadedAuditContext) {
           key,
           {
             label: dim.label,
-            standing: dim.standing,
-            standingSummary: dim.standingLabel,
+            ...(facts.dimensionRankingAvailable
+              ? {
+                  standing: dim.standing,
+                  standingSummary: dim.standingLabel,
+                }
+              : {}),
             confidence: compact(dim.confidence, 40),
             reason: compact(dim.reason, 500),
             strengths: compactList(dim.strengths, 5, 320),

@@ -26,6 +26,10 @@ import {
   loadHumanAuditUsage,
   readyHumanAuditUsage,
 } from "./humanAuditUsageState";
+import {
+  hydrateRecentCanonicalFacts,
+  scoreFreePillars,
+} from "./recentCanonicalFacts";
 
 const RECENTS_KEY = "verdict_recent_investigations";
 
@@ -58,7 +62,7 @@ function compactRecentResult(result: AuditSummary): AuditSummary {
     score_interpretation: result.score_interpretation,
     the_verdict: result.the_verdict,
     priority_matrix: result.priority_matrix,
-    pillars: result.pillars,
+    pillars: scoreFreePillars(result.pillars),
   };
 }
 
@@ -98,6 +102,7 @@ export function VerdictWorkspace() {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const liveEventsRef = useRef<ActivityEvent[]>([]);
   const inFlightRef = useRef(false);
+  const recentSelectionRef = useRef(0);
 
   const investigating = phase === "investigating";
   const busy = investigating || conversing;
@@ -188,40 +193,70 @@ export function VerdictWorkspace() {
     });
   };
 
+  const restoreRecent = (item: RecentInvestigation) => {
+    if (!item.result) return;
+
+    const result = compactRecentResult(item.result);
+
+    setRecents((current) => {
+      const updated = current.map((recent) =>
+        recent.id === item.id ? { ...item, result } : recent
+      );
+      try {
+        localStorage.setItem(RECENTS_KEY, JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+      return updated;
+    });
+
+    // Restore audit without re-running the backend investigation.
+    setDraft("");
+    setPhase("complete");
+    setActiveUrl(item.url);
+    setActiveDomain(item.domain);
+    setActiveCompany(item.companyName);
+    setActiveScore(item.score);
+    setActiveReportId(item.reportId);
+    setActiveResult(result);
+    setLiveEvents([]);
+    setActivityEvents([]);
+    liveEventsRef.current = [];
+
+    const restoredMessages: WorkspaceMessage[] = [
+      { id: nextId(), role: "user", kind: "text", content: item.url },
+      {
+        id: nextId(),
+        role: "verdict",
+        kind: "result",
+        summary:
+          item.summary ||
+          `${item.companyName} scores ${item.score}/100 on Growth Readiness. The full breakdown is in the report.`,
+        result,
+        domain: item.domain,
+      },
+    ];
+
+    setMessages(restoredMessages);
+    setIsRightPanelOpen(true);
+    setHasCompletedAudit(true);
+  };
+
   const handleSelectRecent = (item: RecentInvestigation) => {
     if (busy || inFlightRef.current) return;
 
     if (item.result) {
-      // Restore audit instantly without re-running backend investigation
-      setDraft("");
-      setPhase("complete");
-      setActiveUrl(item.url);
-      setActiveDomain(item.domain);
-      setActiveCompany(item.companyName);
-      setActiveScore(item.score);
-      setActiveReportId(item.reportId);
-      setActiveResult(item.result);
-      setLiveEvents([]);
-      setActivityEvents([]);
-      liveEventsRef.current = [];
-
-      const restoredMessages: WorkspaceMessage[] = [
-        { id: nextId(), role: "user", kind: "text", content: item.url },
-        {
-          id: nextId(),
-          role: "verdict",
-          kind: "result",
-          summary:
-            item.summary ||
-            `${item.companyName} scores ${item.score}/100 on Growth Readiness. The full breakdown is in the report.`,
-          result: item.result,
-          domain: item.domain,
-        },
-      ];
-
-      setMessages(restoredMessages);
-      setIsRightPanelOpen(true);
-      setHasCompletedAudit(true);
+      const selection = recentSelectionRef.current + 1;
+      recentSelectionRef.current = selection;
+      void hydrateRecentCanonicalFacts(item).then((hydrated) => {
+        if (
+          recentSelectionRef.current !== selection ||
+          inFlightRef.current
+        ) {
+          return;
+        }
+        restoreRecent(hydrated);
+      });
     } else {
       // Fallback only if no cached audit result
       handleSend(item.url);
@@ -229,6 +264,7 @@ export function VerdictWorkspace() {
   };
 
   const handleNewInvestigation = () => {
+    recentSelectionRef.current += 1;
     setDraft("");
     setPendingAuditUrl(null);
     setPhase("idle");
@@ -433,6 +469,8 @@ export function VerdictWorkspace() {
   const handleSend = (raw: string) => {
     const text = raw.trim();
     if (!text || busy || inFlightRef.current) return;
+
+    recentSelectionRef.current += 1;
 
     const url = extractStartupUrl(text);
     if (

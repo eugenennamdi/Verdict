@@ -12,6 +12,7 @@ import {
   Share2,
 } from "lucide-react";
 import { Footer } from "@/components/footer";
+import type { CanonicalReportProjection } from "@/lib/audit/canonicalReport";
 
 export type PillarData = {
   score?: number | string;
@@ -42,6 +43,7 @@ export type ReportData = {
   };
   growth_plan_30_day?: Record<string, unknown>;
   top_5_priorities?: PriorityItem[];
+  canonicalReportFacts?: CanonicalReportProjection;
 };
 
 const CANONICAL_PILLARS = [
@@ -125,19 +127,26 @@ export function ReportView({ report }: { report: ReportData }) {
   const [isDownloading, setIsDownloading] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
 
-  const companyName = String(report.company_name || "Target Startup");
+  const canonical = report.canonicalReportFacts;
+  const companyName = String(
+    canonical?.companyName || report.company_name || "Target Startup"
+  );
   const url = report.url ? String(report.url) : "";
   const cleanUrl = url.replace(/^https?:\/\//, "").replace(/\/$/, "");
-  const score = Number(report.fdi_overall_score || 0);
+  const score = Number(canonical?.overallScore ?? report.fdi_overall_score ?? 0);
 
   const verdict = report.key_risks || {};
-  const executiveSummary = report.executive_summary;
-  const primaryConstraint = verdict.primary_constraint;
-  const highestOpportunity = verdict.highest_opportunity;
-  const estimatedImpact = verdict.estimated_impact;
+  const executiveSummary =
+    canonical?.executiveAssessment || report.executive_summary;
+  const primaryConstraint =
+    canonical?.primaryBottleneck || verdict.primary_constraint;
+  const highestOpportunity =
+    canonical?.highestOpportunity || verdict.highest_opportunity;
+  const estimatedImpact =
+    canonical?.estimatedImpact || verdict.estimated_impact;
 
   const pillars = resolvePillars(report.growth_plan_30_day);
-  const priorities = report.top_5_priorities || [];
+  const priorities = canonical?.priorities || report.top_5_priorities || [];
 
   const handleShareX = () => {
     const text = `I just reviewed the autonomous growth audit for ${companyName} on Verdict.\n\nScore: ${score}/100\nRead the full breakdown:`;

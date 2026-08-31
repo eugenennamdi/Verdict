@@ -201,6 +201,20 @@ describe("grounded audit Q&A", () => {
     );
   });
 
+  it("does not project fabricated ranking facts into model context when scores are absent", () => {
+    const loaded = makeLoadedAuditContext();
+    loaded.context.pillars = {} as typeof loaded.context.pillars;
+    const prompt = buildAuditQaPrompt({
+      question: "Explain the report.",
+      loaded,
+    });
+
+    expect(prompt).not.toContain('"strongestDimension"');
+    expect(prompt).not.toContain('"weakestDimension"');
+    expect(prompt).not.toContain('"standing"');
+    expect(prompt).not.toContain('"standingSummary"');
+  });
+
   it("keeps malicious evidence as delimited data and excludes secret-shaped extras", () => {
     const loaded = makeLoadedAuditContext();
     Object.assign(loaded.context, { apiKey: "SECRET_API_KEY_SENTINEL" });

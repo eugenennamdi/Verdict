@@ -16,6 +16,8 @@ export type PillarScore = {
   score?: number;
   confidence?: string;
   reason?: string;
+  strengths?: string[];
+  weaknesses?: string[];
 };
 
 export type AuditSummary = {

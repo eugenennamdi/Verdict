@@ -392,6 +392,21 @@ function dimensionExplanation(
       question
     );
 
+  if (
+    !facts.dimensionRankingAvailable &&
+    (asksWeakest || asksStrongest || asksComparison)
+  ) {
+    return deterministicAnswer(
+      "This persisted report does not contain enough authoritative ranking data to identify a strongest or weakest area.",
+      {
+        citations: [],
+        answerType: "score_explanation",
+        confidence: "high",
+        limitations: ["Authoritative dimension ranking data is unavailable."],
+      }
+    );
+  }
+
   let anchor: string;
   let explanationKeys: PillarKey[];
 
@@ -749,6 +764,17 @@ export function answerDeterministically(
 
   if (route.type === "strongest_dimension") {
     const facts = deriveCanonicalReportFacts(context);
+    if (!facts.dimensionRankingAvailable) {
+      return deterministicAnswer(
+        "This persisted report does not contain enough authoritative ranking data to identify a strongest area.",
+        {
+          citations: [],
+          answerType: "score_explanation",
+          confidence: "high",
+          limitations: ["Authoritative dimension ranking data is unavailable."],
+        }
+      );
+    }
     const strongest = facts.strongestDimension;
     const dim = facts.dimensions[strongest.key];
     const strengths = dim.strengths.length > 0 ? ` Key strengths: ${dim.strengths.join("; ")}.` : "";
@@ -765,6 +791,17 @@ export function answerDeterministically(
 
   if (route.type === "weakest_dimension") {
     const facts = deriveCanonicalReportFacts(context);
+    if (!facts.dimensionRankingAvailable) {
+      return deterministicAnswer(
+        "This persisted report does not contain enough authoritative ranking data to identify a weakest area.",
+        {
+          citations: [],
+          answerType: "score_explanation",
+          confidence: "high",
+          limitations: ["Authoritative dimension ranking data is unavailable."],
+        }
+      );
+    }
     const weakest = facts.weakestDimension;
     const dim = facts.dimensions[weakest.key];
     const weaknesses = dim.weaknesses.length > 0 ? ` Key areas to improve: ${dim.weaknesses.join("; ")}.` : "";

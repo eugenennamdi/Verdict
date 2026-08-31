@@ -176,6 +176,44 @@ describe("ReportView standalone editorial full report", () => {
     expect(html).toContain("Reduces first-deposit drop-off by an estimated 22% within 30 days.");
   });
 
+  it("uses the server canonical projection for full-report conclusions", () => {
+    const report: ReportData = {
+      ...sampleReport,
+      canonicalReportFacts: {
+        reportId: "rep_morpho_123",
+        companyName: "Canonical Morpho",
+        overallScore: 84,
+        dimensionRankingAvailable: true,
+        strongestDimension: { key: "trust", label: "Trust" },
+        weakestDimension: { key: "conversion", label: "Conversion" },
+        primaryBottleneck: "Canonical bottleneck.",
+        highestOpportunity: "Canonical opportunity.",
+        executiveAssessment: "Canonical executive assessment.",
+        estimatedImpact: "Canonical estimated impact.",
+        priorities: [
+          {
+            task: "Canonical first priority",
+            why: "It is first in the persisted report.",
+            impact: "High",
+            effort: "Low",
+          },
+        ],
+        topPriority: "Canonical first priority",
+      },
+    };
+    const html = renderToStaticMarkup(
+      createElement(ReportView, { report })
+    );
+
+    expect(html).toContain("Canonical Morpho");
+    expect(html).toContain(">84<");
+    expect(html).toContain("Canonical executive assessment.");
+    expect(html).toContain("Canonical bottleneck.");
+    expect(html).toContain("Canonical opportunity.");
+    expect(html).toContain("Canonical first priority");
+    expect(html).not.toContain(">81<");
+  });
+
   it("renders the 7-pillar analysis sequentially without individual pillar scores", () => {
     const html = renderToStaticMarkup(createElement(ReportView, { report: sampleReport }));
 
