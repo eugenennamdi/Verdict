@@ -1,36 +1,96 @@
-import { Metadata } from "next";
+import type { Metadata } from "next";
+import Link from "next/link";
+import { Download } from "lucide-react";
+import { DocsPagination } from "@/components/docs/DocsPagination";
+import { DocsCallout } from "@/components/docs/DocsCallout";
 
 export const metadata: Metadata = {
-  title: "Brand Assets | Verdict Docs",
-  description: "Download official Verdict brand assets and logos.",
+  title: "Brand Assets",
+  description:
+    "Official logos, marks, and design guidelines for Verdict.",
 };
 
 export default function BrandAssetsPage() {
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-4xl font-black tracking-tight text-slate-900 dark:text-white mb-4">
+    <div className="space-y-12">
+      {/* Header */}
+      <div className="space-y-3">
+        <p className="font-mono text-[12px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          Reference
+        </p>
+        <h1 className="text-3xl font-extrabold tracking-tight text-slate-950 dark:text-white sm:text-4xl">
           Brand Assets
         </h1>
-        <p className="text-lg text-slate-600 dark:text-slate-400">
-          Official logos and brand guidelines for Verdict. 
-          Use these assets when linking to Verdict, building agent integrations, or writing about our architecture.
+        <p className="text-lg leading-relaxed text-slate-600 dark:text-slate-300 pt-1">
+          Official logos, marks, and design assets for Verdict. Use these assets when referencing
+          Verdict in articles, research, partner integrations, or developer tools.
         </p>
       </div>
-      <div>
-        <a 
-          href="/verdict-brand-assets.zip"
-          download
-          className="inline-flex items-center gap-2 bg-orange-500 hover:bg-orange-600 !text-white font-bold py-2 px-4 rounded-lg transition-all shadow-[0_0_15px_rgba(249,115,22,0.2)] hover:shadow-[0_0_25px_rgba(249,115,22,0.4)] active:scale-95 no-underline text-sm"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          Download .ZIP
-        </a>
-      </div>
+
+      {/* Asset Preview Cards */}
+      <section className="space-y-4">
+        <h2 className="text-xl font-bold text-slate-950 dark:text-white">
+          Vector Assets & Marks
+        </h2>
+
+        <div className="grid gap-4 sm:grid-cols-2 pt-2">
+          {/* Mark Card */}
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-6 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs space-y-4">
+            <div className="flex h-24 items-center justify-center rounded-xl bg-slate-950 text-white dark:bg-slate-900">
+              <span className="flex size-10 items-center justify-center rounded-xl bg-white font-mono text-base font-bold text-slate-950">
+                V
+              </span>
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-950 dark:text-white">
+                Verdict Logo Mark
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                Monochrome square mark for avatars, favicon, and app icons.
+              </p>
+            </div>
+          </div>
+
+          {/* Wordmark Card */}
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-6 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs space-y-4">
+            <div className="flex h-24 items-center justify-center rounded-xl bg-slate-950 text-white dark:bg-slate-900">
+              <div className="flex items-center gap-2.5 font-bold tracking-tight text-lg">
+                <span className="flex size-6 items-center justify-center rounded-md bg-white font-mono text-xs font-bold text-slate-950">
+                  V
+                </span>
+                <span>Verdict</span>
+              </div>
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-950 dark:text-white">
+                Full Wordmark
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                Full horizontal lockup for navigation bars, headers, and media.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="pt-4">
+          <a
+            href="/verdict-brand-assets.zip"
+            download
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-xs font-bold text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200 transition-colors shadow-xs"
+          >
+            <Download className="size-4" />
+            <span>Download All Brand Assets (.ZIP)</span>
+          </a>
+        </div>
+      </section>
+
+      <DocsPagination
+        prev={{
+          title: "FAQ",
+          href: "/docs/faq",
+          description: "Frequently asked questions.",
+        }}
+      />
     </div>
   );
 }

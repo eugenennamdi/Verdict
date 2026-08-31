@@ -1,82 +1,199 @@
-import { Metadata } from "next";
-import { DocsPagination } from "@/components/DocsPagination";
-import { Card, CardContent } from "@/components/ui/card";
+import type { Metadata } from "next";
+import Link from "next/link";
+import { ArrowRight, Bot, Compass, Cpu, Layers, ShieldCheck, Sparkles } from "lucide-react";
+import { DocsPagination } from "@/components/docs/DocsPagination";
+import { DocsCallout } from "@/components/docs/DocsCallout";
 
 export const metadata: Metadata = {
-  title: "Why Verdict Exists | Documentation",
+  title: "Introduction",
+  description:
+    "Overview of Verdict, the autonomous growth intelligence platform and programmatic audit API.",
 };
 
 export default function DocsIntroPage() {
   return (
-    <>
-      <h1 className="text-5xl font-black tracking-tight mb-6">Why Verdict Exists</h1>
-      
-      <p className="text-xl text-slate-600 dark:text-slate-400 mb-8 leading-relaxed">
-        The startup ecosystem is plagued by &quot;delusion by echo chamber.&quot; Founders spend months building products, wrapping them in generic marketing fluff, and wondering why they aren&apos;t scaling.
-      </p>
-
-      <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 mb-12 shadow-sm">
-        <p className="text-slate-900 dark:text-white font-medium m-0 mb-4 text-lg leading-relaxed">
-          When founders ask for feedback, they get polite nods from friends or superficial critiques from AI wrappers that simply say, &quot;Your website looks great! Maybe add a clearer CTA?&quot;
+    <div className="space-y-12">
+      {/* Page Header */}
+      <div className="space-y-3">
+        <p className="font-mono text-[12px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          Getting Started
         </p>
-        <p className="text-slate-900 dark:text-white font-black text-xl m-0 tracking-tight">
-          Verdict is the antidote.
+        <h1 className="text-3xl font-extrabold tracking-tight text-slate-950 dark:text-white sm:text-4xl">
+          Introduction to Verdict
+        </h1>
+        <p className="text-lg leading-relaxed text-slate-600 dark:text-slate-300 pt-1">
+          Verdict is autonomous growth intelligence for startups and software companies.
+          It investigates a company&apos;s public surface, builds an evidence-backed
+          understanding of the business, evaluates its growth readiness across a
+          deterministic framework, and identifies the primary bottleneck holding it back.
         </p>
       </div>
 
-      <h2>The Problem with &quot;AI Wrappers&quot;</h2>
-      <p>
-        Most AI tools fail at business analysis because they suffer from <strong>Positivity Bias</strong>. Standard Large Language Models (LLMs) are RLHF-trained to be helpful, polite, and encouraging. If you feed an LLM your landing page and ask for a critique, it will actively search for nice things to say to cushion the blow.
-      </p>
-      <p>
-        In early-stage startups, polite feedback is fatal. You don&apos;t need a cheerleader; you need a diagnosis.
-      </p>
+      {/* Core Concept Cards */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-6 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs">
+          <div className="flex size-9 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white mb-4">
+            <Compass className="size-5" />
+          </div>
+          <h2 className="text-base font-bold text-slate-950 dark:text-white mb-2">
+            Human Workspace
+          </h2>
+          <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+            A conversational product surface where founders, investors, and operators submit a
+            startup URL, receive a structured Growth Readiness audit, review the full report,
+            and ask grounded follow-up questions.
+          </p>
+          <Link
+            href="/docs/quickstart"
+            className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-orange-600 dark:text-orange-400 hover:underline"
+          >
+            <span>Read human quickstart</span>
+            <ArrowRight className="size-3" />
+          </Link>
+        </div>
 
-      <h2>Our Philosophy</h2>
-      <p>
-        Verdict strips away the RLHF positivity bias using aggressive system prompts, strict JSON schema enforcement, and a rigid 7-pillar grading rubric. 
-      </p>
-      
-      <ul className="space-y-4 mb-12">
-        <li><strong>We don&apos;t just pass your URL to an LLM.</strong> We run a full headless browser to bypass bot protection, render your JavaScript, and extract your raw DOM.</li>
-        <li><strong>We normalize the context.</strong> We force our proprietary reasoning engine to evaluate your company against the harsh reality of the B2B/B2C market.</li>
-        <li><strong>Brutal Honesty.</strong> If your startup is a thin wrapper, we will tell you. If your value proposition is a word salad of buzzwords, we will rip it apart.</li>
-      </ul>
-
-      <h2>Who is Verdict for?</h2>
-      <p>
-        Designed to give brutally honest, actionable insights for those who build and scale.
-      </p>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-8">
-        {[
-          { role: "Founders", desc: "Validate your messaging and ensure your core value prop lands instantly." },
-          { role: "VCs & Investors", desc: "Quickly audit portfolio companies to identify obvious growth bottlenecks." },
-          { role: "Growth Marketers", desc: "Find friction points in the funnel before throwing massive ad spend at it." },
-          { role: "Product Managers", desc: "Ensure your product positioning aligns seamlessly with user expectations." },
-          { role: "Agencies", desc: "Audit prospective clients in 60 seconds to pitch higher-ROI retainers." },
-          { role: "Indie Hackers", desc: "Get unbiased feedback when you've been staring at your own code for too long." }
-        ].map((item, idx) => (
-          <Card key={idx} className="bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-            <CardContent className="p-5">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1 mt-0">{item.role}</h3>
-              <p className="text-slate-600 dark:text-slate-400 text-sm m-0 leading-relaxed">{item.desc}</p>
-            </CardContent>
-          </Card>
-        ))}
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-6 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs">
+          <div className="flex size-9 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white mb-4">
+            <Bot className="size-5" />
+          </div>
+          <h2 className="text-base font-bold text-slate-950 dark:text-white mb-2">
+            Agent API (x402)
+          </h2>
+          <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+            A machine-to-machine HTTP endpoint (<code>POST /api/v2/audit</code>) enabling
+            autonomous software agents to pay for and consume structured growth audits
+            programmatically using USDC on Base.
+          </p>
+          <Link
+            href="/docs/agent-api"
+            className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-orange-600 dark:text-orange-400 hover:underline"
+          >
+            <span>Explore Agent API</span>
+            <ArrowRight className="size-3" />
+          </Link>
+        </div>
       </div>
 
-      <h2>Verdict vs. Verdict Pro (Bulk Screener)</h2>
-      <p>
-        Verdict burns through a lot of compute. Spinning up headless browsers (Firecrawl) and processing massive amounts of context means running this kind of deep analysis gets expensive fast.
-      </p>
-      <p>
-        Instead of forcing users into expensive monthly SaaS subscriptions, we engineered a hybrid model:
-      </p>
-      <ul className="space-y-4 mb-12">
-        <li><strong>Verdict:</strong> A free, rate-limited (1 audit per 12 hours) web interface designed for founders to experience the autonomous engine firsthand.</li>
-        <li><strong>Verdict Pro (ASP on OKX.AI):</strong> Our uncapped, dual-endpoint autonomous auditor natively on the OKX.AI ecosystem. Single audits cost 0.5 USDT, while our enterprise Bulk Portfolio Screener processes up to 20 URLs concurrently for 10.0 USDT using Web3 rails.</li>
-      </ul>
-      <DocsPagination next={{ title: "Architecture & Pipeline", href: "/docs/architecture" }} />
-    </>
+      {/* Section: What Verdict Does */}
+      <section className="space-y-4 pt-2">
+        <h2 className="text-xl font-bold tracking-tight text-slate-950 dark:text-white">
+          What happens when you submit a URL?
+        </h2>
+        <p className="text-[15px] leading-relaxed text-slate-600 dark:text-slate-300">
+          When an audit begins—whether triggered by a human in the workspace or an agent via
+          the API—Verdict executes a disciplined, bounded investigation pipeline:
+        </p>
+
+        <ol className="mt-4 space-y-3.5 pl-0">
+          {[
+            {
+              step: "01",
+              title: "Primary evidence acquisition",
+              detail:
+                "Verdict acquires the startup homepage, validates URL reachability, and extracts clean ground-truth text.",
+            },
+            {
+              step: "02",
+              title: "Normalized identity extraction",
+              detail:
+                "The engine de-fluffs marketing jargon to establish ground truth: company name, target audience, core value proposition, and primary call-to-action.",
+            },
+            {
+              step: "03",
+              title: "Bounded candidate discovery & selective gathering",
+              detail:
+                "Verdict discovers high-signal supporting pages (e.g. pricing, product features, documentation, case studies) without executing an unbounded site crawl.",
+            },
+            {
+              step: "04",
+              title: "Relevance admission boundary",
+              detail:
+                "Fetched pages must pass an explicit entity relevance test before contributing to the audit, ensuring noise and third-party embeds are discarded.",
+            },
+            {
+              step: "05",
+              title: "Deterministic 7-pillar evaluation",
+              detail:
+                "The combined evidence is graded across seven foundational growth dimensions to compute a single Growth Readiness Score (0–100).",
+            },
+            {
+              step: "06",
+              title: "Synthesis & prioritized recommendations",
+              detail:
+                "Verdict isolates the primary growth bottleneck and outputs a prioritized action roadmap with estimated impact and effort.",
+            },
+          ].map((item) => (
+            <li
+              key={item.step}
+              className="flex items-start gap-4 rounded-2xl border border-slate-200/80 bg-white p-4.5 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs"
+            >
+              <span className="font-mono text-xs font-bold text-slate-400 dark:text-slate-500 pt-0.5">
+                {item.step}
+              </span>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-slate-950 dark:text-white">
+                  {item.title}
+                </h3>
+                <p className="text-xs sm:text-[13px] leading-relaxed text-slate-600 dark:text-slate-400">
+                  {item.detail}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      {/* Section: Core Tenets */}
+      <section className="space-y-4 pt-2">
+        <h2 className="text-xl font-bold tracking-tight text-slate-950 dark:text-white">
+          Design & Engineering Principles
+        </h2>
+        <div className="grid gap-3.5 sm:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-4.5 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs">
+            <h3 className="text-sm font-bold text-slate-950 dark:text-white mb-1.5">
+              Deterministic Scoring
+            </h3>
+            <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+              The overall Growth Readiness Score is derived mathematically from weighted
+              rubric dimensions, not generated as an arbitrary LLM number.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-4.5 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs">
+            <h3 className="text-sm font-bold text-slate-950 dark:text-white mb-1.5">
+              Evidence-First
+            </h3>
+            <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+              Every finding is grounded in public surface evidence. Unsupported assertions
+              and unverified claims are filtered out.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-4.5 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs">
+            <h3 className="text-sm font-bold text-slate-950 dark:text-white mb-1.5">
+              Non-Custodial
+            </h3>
+            <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+              Verdict does not store user funds, take custody of wallets, or execute
+              transactions automatically without explicit authorization.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <DocsCallout type="note" title="Need to integrate an agent?">
+        If you are building an autonomous agent or workflow, head over to the{" "}
+        <Link href="/docs/agent-api" className="font-semibold text-orange-600 dark:text-orange-400 hover:underline">
+          Agent API Overview
+        </Link>{" "}
+        to review the request contract and x402 payment specifications.
+      </DocsCallout>
+
+      <DocsPagination
+        next={{
+          title: "Quickstart",
+          href: "/docs/quickstart",
+          description: "Run your first audit in 6 simple steps.",
+        }}
+      />
+    </div>
   );
 }
