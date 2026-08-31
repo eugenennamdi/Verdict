@@ -50,6 +50,7 @@ export type CanonicalReportFacts = {
   primaryBottleneck: string;
   highestOpportunity: string;
   estimatedImpact: string;
+  dimensionRankingAvailable: boolean;
   strongestDimension: {
     key: PillarKey;
     label: string;
@@ -69,6 +70,16 @@ export type CanonicalReportFacts = {
   }>;
   priorities: CanonicalPriorityFact[];
   dimensions: Record<PillarKey, CanonicalDimensionFact>;
+};
+
+export type CanonicalReportProjection = {
+  companyName: string;
+  overallScore: number;
+  strongestDimension: { key: PillarKey; label: string };
+  weakestDimension: { key: PillarKey; label: string };
+  primaryBottleneck: string;
+  highestOpportunity: string;
+  topPriority: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -96,6 +107,12 @@ function stringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function pillarKeyVal(value: unknown): PillarKey | undefined {
+  return typeof value === "string" && value in PILLAR_WEIGHTS
+    ? (value as PillarKey)
+    : undefined;
+}
+
 /**
  * Extracts and normalizes canonical report facts deterministically from any
  * internal audit result, persisted row, or audit context pack.
@@ -112,6 +129,11 @@ export function deriveCanonicalReportFacts(raw: unknown): CanonicalReportFacts {
 
   // Extract nested properties from AuditContextPackV1, AuditSummary, or PersistedReportContextRow
   const context = isRecord(obj.context) ? obj.context : obj;
+  const projectedFacts = isRecord(context.canonicalReportFacts)
+    ? context.canonicalReportFacts
+    : isRecord(obj.canonicalReportFacts)
+      ? obj.canonicalReportFacts
+      : {};
 
   const audited = isRecord(context.audited) ? context.audited : {};
   const identity = isRecord(context.companyIdentity)
@@ -147,6 +169,7 @@ export function deriveCanonicalReportFacts(raw: unknown): CanonicalReportFacts {
     })() : "");
 
   const companyName =
+    stringVal(projectedFacts.companyName) ||
     stringVal(identity.company_name) ||
     stringVal(context.company_name) ||
     stringVal(obj.company_name) ||
@@ -166,11 +189,14 @@ export function deriveCanonicalReportFacts(raw: unknown): CanonicalReportFacts {
     "";
 
   const primaryBottleneck =
+    stringVal(projectedFacts.primaryBottleneck) ||
     stringVal(finalVerdict.primary_constraint) ||
     executiveAssessment ||
     "Growth constraints observed during investigation.";
 
-  const highestOpportunity = stringVal(finalVerdict.highest_opportunity);
+  const highestOpportunity =
+    stringVal(projectedFacts.highestOpportunity) ||
+    stringVal(finalVerdict.highest_opportunity);
   const estimatedImpact = stringVal(finalVerdict.estimated_impact);
 
   // Extract raw pillars
@@ -248,7 +274,9 @@ export function deriveCanonicalReportFacts(raw: unknown): CanonicalReportFacts {
 
   // Calculate Overall Score if not explicitly provided
   const explicitOverall =
-    outcome.overallScore !== undefined
+    projectedFacts.overallScore !== undefined
+      ? numberVal(projectedFacts.overallScore)
+      : outcome.overallScore !== undefined
       ? numberVal(outcome.overallScore)
       : context.overallScore !== undefined
         ? numberVal(context.overallScore)
@@ -274,9 +302,39 @@ export function deriveCanonicalReportFacts(raw: unknown): CanonicalReportFacts {
     return pillarKeys.indexOf(a.key) - pillarKeys.indexOf(b.key);
   });
 
-  const strongestScore = rankedOrder[0].score;
-  const weakestScore = rankedOrder[rankedOrder.length - 1].score;
-  const allEqual = strongestScore === weakestScore;
+  const projectedStrongest = isRecord(projectedFacts.strongestDimension)
+    ? pillarKeyVal(projectedFacts.strongestDimension.key)
+    : undefined;
+  const projectedWeakest = isRecord(projectedFacts.weakestDimension)
+    ? pillarKeyVal(projectedFacts.weakestDimension.key)
+    : undefined;
+  const hasProjectedRanking = Boolean(projectedStrongest && projectedWeakest);
+  const hasCompletePillarScores = pillarKeys.every((key) => {
+    const rawPillar = rawPillarsObj[key];
+    return (
+      (typeof rawPillar === "number" && Number.isFinite(rawPillar)) ||
+      (isRecord(rawPillar) && Number.isFinite(rawPillar.score))
+    );
+  });
+  const strongestKey = projectedStrongest ?? rankedOrder[0].key;
+  const weakestKey = projectedWeakest ?? rankedOrder[rankedOrder.length - 1].key;
+  const strongestItem = dimensionList.find((item) => item.key === strongestKey)!;
+  const weakestItem = dimensionList.find((item) => item.key === weakestKey)!;
+  const canonicalOrder = hasProjectedRanking
+    ? [
+        strongestItem,
+        ...rankedOrder.filter(
+          (item) => item.key !== strongestKey && item.key !== weakestKey
+        ),
+        ...(weakestKey === strongestKey ? [] : [weakestItem]),
+      ]
+    : rankedOrder;
+
+  const strongestScore = strongestItem.score;
+  const weakestScore = weakestItem.score;
+  const allEqual = hasProjectedRanking
+    ? strongestKey === weakestKey
+    : strongestScore === weakestScore;
 
   const dimensionsRecord: Record<PillarKey, CanonicalDimensionFact> = {} as Record<
     PillarKey,
@@ -285,23 +343,35 @@ export function deriveCanonicalReportFacts(raw: unknown): CanonicalReportFacts {
 
   const rankedDimensions: CanonicalReportFacts["rankedDimensions"] = [];
 
-  const strongestCount = dimensionList.filter((d) => d.score === strongestScore).length;
-  const weakestCount = dimensionList.filter((d) => d.score === weakestScore).length;
+  const strongestCount = hasProjectedRanking
+    ? 1
+    : dimensionList.filter((d) => d.score === strongestScore).length;
+  const weakestCount = hasProjectedRanking
+    ? 1
+    : dimensionList.filter((d) => d.score === weakestScore).length;
 
-  for (const item of rankedOrder) {
+  for (const item of canonicalOrder) {
     let standing: PillarStanding = "between_strongest_and_weakest";
     let standingLabel = "sat between the strongest and weakest areas";
 
     if (allEqual) {
       standing = "in_line";
       standingLabel = "was in line with the other areas";
-    } else if (item.score === strongestScore) {
+    } else if (
+      hasProjectedRanking
+        ? item.key === strongestKey
+        : item.score === strongestScore
+    ) {
       standing = "strongest";
       standingLabel =
         strongestCount === 1
           ? "was the strongest area"
           : "was one of the strongest areas";
-    } else if (item.score === weakestScore) {
+    } else if (
+      hasProjectedRanking
+        ? item.key === weakestKey
+        : item.score === weakestScore
+    ) {
       standing = "weakest";
       standingLabel =
         weakestCount === 1
@@ -336,18 +406,45 @@ export function deriveCanonicalReportFacts(raw: unknown): CanonicalReportFacts {
     primaryBottleneck,
     highestOpportunity,
     estimatedImpact,
+    dimensionRankingAvailable: hasProjectedRanking || hasCompletePillarScores,
     strongestDimension: {
-      key: rankedOrder[0].key,
-      label: rankedOrder[0].label,
-      score: rankedOrder[0].score,
+      key: strongestItem.key,
+      label: strongestItem.label,
+      score: strongestItem.score,
     },
     weakestDimension: {
-      key: rankedOrder[rankedOrder.length - 1].key,
-      label: rankedOrder[rankedOrder.length - 1].label,
-      score: rankedOrder[rankedOrder.length - 1].score,
+      key: weakestItem.key,
+      label: weakestItem.label,
+      score: weakestItem.score,
     },
     rankedDimensions,
     priorities,
     dimensions: dimensionsRecord,
+  };
+}
+
+/**
+ * Projects only customer-safe canonical conclusions for the workspace. Pillar
+ * scores remain server-side; the labels are derived from the same facts used by
+ * persisted-report Q&A.
+ */
+export function projectCanonicalReportFacts(
+  raw: unknown
+): CanonicalReportProjection {
+  const facts = deriveCanonicalReportFacts(raw);
+  return {
+    companyName: facts.companyName,
+    overallScore: facts.overallScore,
+    strongestDimension: {
+      key: facts.strongestDimension.key,
+      label: facts.strongestDimension.label,
+    },
+    weakestDimension: {
+      key: facts.weakestDimension.key,
+      label: facts.weakestDimension.label,
+    },
+    primaryBottleneck: facts.primaryBottleneck,
+    highestOpportunity: facts.highestOpportunity,
+    topPriority: facts.priorities[0]?.task || "",
   };
 }

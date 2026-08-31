@@ -138,6 +138,39 @@ describe("AuditResultCard editorial intelligence brief", () => {
     expect(html).toContain("Growth Foundation");
   });
 
+  it("uses the score-free canonical projection and never invents a ranking from omitted scores", () => {
+    const pillars = Object.fromEntries(
+      Object.keys(sampleResult().pillars ?? {}).map((key) => [key, {}])
+    );
+    const projected = renderToStaticMarkup(
+      createElement(AuditResultCard, {
+        result: sampleResult({
+          pillars,
+          canonicalReportFacts: {
+            companyName: "Linear",
+            overallScore: 86,
+            strongestDimension: { key: "trust", label: "Trust" },
+            weakestDimension: { key: "conversion", label: "Conversion" },
+            primaryBottleneck: "Pricing transparency on homepage is absent.",
+            highestOpportunity: "Add pricing tiers directly to navigation.",
+            topPriority: "Add visible pricing page link on homepage",
+          },
+        }),
+      })
+    );
+    const unavailable = renderToStaticMarkup(
+      createElement(AuditResultCard, {
+        result: sampleResult({ pillars }),
+      })
+    );
+
+    expect(projected).toContain("Trust");
+    expect(projected).toContain("Conversion");
+    expect(projected).not.toContain("Website &amp; UX");
+    expect(unavailable).not.toContain("Strongest");
+    expect(unavailable).not.toContain("Weakest");
+  });
+
   it("renders action buttons for Audit context and View full report", () => {
     const html = renderToStaticMarkup(
       createElement(AuditResultCard, {

@@ -2,11 +2,10 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/dist/server/web/spec-extension/response";
 import { FALLBACK_REPLY, resolveModelTurn } from "@/lib/conversation/actions";
-import type { PublicAuditQaMetadata } from "@/lib/conversation/auditAnswer";
-import {
-  answerGroundedAuditQuestion,
-  type AuditQaGenerator,
-} from "@/lib/conversation/auditQa";
+import type {
+  AuditQaAnswer,
+  PublicAuditQaMetadata,
+} from "@/lib/conversation/auditAnswer";
 import {
   loadAuditContext,
   type LoadedAuditContext,
@@ -15,7 +14,7 @@ import {
   answerDeterministically,
   applyPublicAuditQaPolicy,
   classifyAuditFollowup,
-  fallbackGroundedAnswer,
+  composeCanonicalGroundedAnswer,
 } from "@/lib/conversation/auditQuestions";
 import {
   buildVerdictSystemPrompt,
@@ -156,16 +155,9 @@ function resolveReportReference(
     );
   });
   const ids = [...new Set(matches.map((item) => item.reportId))];
+  if (activeReportId) return { reportId: activeReportId, ambiguous: false };
   if (ids.length > 1) return { ambiguous: true };
-  return { reportId: ids[0] ?? activeReportId, ambiguous: false };
-}
-
-function conversationSummary(history: ChatTurn[]): string {
-  return history
-    .slice(0, -1)
-    .slice(-6)
-    .map((turn) => `${turn.role}: ${turn.content}`)
-    .join("\n");
+  return { reportId: ids[0], ambiguous: false };
 }
 
 function explicitCompanyReference(question: string): string | null {
@@ -197,7 +189,7 @@ function safeHttpUrl(value: string): boolean {
 
 function publicQaMetadata(
   loaded: LoadedAuditContext,
-  answer: Awaited<ReturnType<typeof answerGroundedAuditQuestion>>
+  answer: AuditQaAnswer
 ): PublicAuditQaMetadata {
   const sourceById = new Map(
     loaded.context.sources.map((source) => [source.sourceId, source])
@@ -228,8 +220,6 @@ type ConversationDependencies = {
     messages: ChatTurn[]
   ) => Promise<DeepSeekCompletion>;
   loadContext?: (reportId: string) => Promise<LoadedAuditContext | null>;
-  answerGrounded?: typeof answerGroundedAuditQuestion;
-  qaGenerator?: AuditQaGenerator;
   getNewAuditUsage?: (request: Request) => Promise<{
     usage: HumanAuditUsageState;
     visitor?: AnonymousAuditVisitor;
@@ -250,8 +240,6 @@ export function createConversationHandler(
 ) {
   const complete = dependencies.complete ?? completeConversation;
   const loadContext = dependencies.loadContext ?? loadAuditContext;
-  const answerGrounded =
-    dependencies.answerGrounded ?? answerGroundedAuditQuestion;
 
   return async function handleConversation(req: Request): Promise<NextResponse> {
     let body: {
@@ -341,34 +329,18 @@ export function createConversationHandler(
         });
       }
 
-      try {
-        const answer = await answerGrounded(
-          {
-            question,
-            loaded,
-            conversationSummary: conversationSummary(history),
-          },
-          dependencies.qaGenerator
-            ? { generate: dependencies.qaGenerator }
-            : undefined
-        );
-        const publicAnswer = applyPublicAuditQaPolicy(answer, loaded, question);
-        return NextResponse.json({
-          action: "respond",
-          message: publicAnswer.answer,
-          url: null,
-          auditQa: publicQaMetadata(loaded, publicAnswer),
-        });
-      } catch {
-        const fallback = fallbackGroundedAnswer(loaded, question);
-        const publicAnswer = applyPublicAuditQaPolicy(fallback, loaded, question);
-        return NextResponse.json({
-          action: "respond",
-          message: publicAnswer.answer,
-          url: null,
-          auditQa: publicQaMetadata(loaded, publicAnswer),
-        });
-      }
+      const grounded = composeCanonicalGroundedAnswer(loaded, question);
+      const publicAnswer = applyPublicAuditQaPolicy(
+        grounded,
+        loaded,
+        question
+      );
+      return NextResponse.json({
+        action: "respond",
+        message: publicAnswer.answer,
+        url: null,
+        auditQa: publicQaMetadata(loaded, publicAnswer),
+      });
     }
 
     try {

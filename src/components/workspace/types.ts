@@ -10,6 +10,7 @@ import type { EvidenceGatherStopReason } from "@/lib/audit/gather";
 import type { PublicAuditQaMetadata } from "@/lib/conversation/auditAnswer";
 import type { HumanAuditQuotaState } from "@/lib/humanAuditQuotaContract";
 import type { HumanAuditUsageState } from "@/lib/humanAuditUsageContract";
+import type { CanonicalReportProjection } from "@/lib/audit/canonicalReport";
 
 export type PillarScore = {
   score?: number;
@@ -20,6 +21,7 @@ export type PillarScore = {
 export type AuditSummary = {
   reportId?: string;
   overallScore: number;
+  canonicalReportFacts?: CanonicalReportProjection;
   identity: {
     company_name: string;
     inferred_description?: string;

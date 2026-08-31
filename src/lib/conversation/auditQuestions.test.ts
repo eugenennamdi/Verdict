@@ -18,7 +18,7 @@ describe("audit follow-up routing", () => {
     );
     expect(classifyAuditFollowup("Why?", true).type).toBe("grounded_qa");
     expect(classifyAuditFollowup("What should we fix first?", true).type).toBe(
-      "grounded_qa"
+      "top_priority"
     );
     expect(
       classifyAuditFollowup("I disagree with the Messaging score.", true).type

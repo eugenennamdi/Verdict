@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { deriveCanonicalReportFacts } from "@/lib/audit/canonicalReport";
+import {
+  deriveCanonicalReportFacts,
+  projectCanonicalReportFacts,
+} from "@/lib/audit/canonicalReport";
 import {
   classifyAuditFollowup,
   answerDeterministically,
@@ -156,6 +159,17 @@ const LINEAR_AUDIT_CONTEXT: AuditContextPackV1 = {
       keyFindings: ["Free tier with paid tiers scaling per active user"],
       relevantSignals: ["pricing_language_present"],
     },
+    {
+      sourceId: "S3",
+      url: "https://linear.app/integrations",
+      path: "/integrations",
+      role: "supporting",
+      category: "growth",
+      acquisitionMethod: "native",
+      chars: 6400,
+      keyFindings: ["Integrations support organic adoption, while structured referral mechanics are not prominent"],
+      relevantSignals: ["integration_ecosystem_present"],
+    },
   ],
   framework: GROWTH_READINESS_FRAMEWORK,
   engineVersion: "1.0.0",
@@ -221,11 +235,28 @@ describe("Canonical Report Truth & Grounded Q&A Invariants", () => {
 
   it("Invariant 5: Answers 'What should I fix first?' anchored in canonical top priority", () => {
     const route = classifyAuditFollowup("What should I fix first to improve growth?", true);
-    expect(route.type).toBe("grounded_qa");
+    expect(route.type).toBe("top_priority");
 
-    const answer = fallbackGroundedAnswer(LOADED_LINEAR_CONTEXT, "What should I fix first?");
+    const answer = answerDeterministically(route, LOADED_LINEAR_CONTEXT, "What should I fix first?");
     expect(answer).not.toBeNull();
-    expect(answer.answer).toContain("Implement guided self-serve team activation checklists");
+    expect(answer?.answer).toContain("Implement guided self-serve team activation checklists");
+  });
+
+  it("deterministically returns the canonical highest-leverage opportunity", () => {
+    const route = classifyAuditFollowup(
+      "What is the highest-leverage opportunity?",
+      true
+    );
+    const answer = answerDeterministically(
+      route,
+      LOADED_LINEAR_CONTEXT,
+      "What is the highest-leverage opportunity?"
+    );
+
+    expect(route.type).toBe("highest_opportunity");
+    expect(answer?.answer).toContain(
+      "Expand enterprise procurement signals and team-level self-serve activation loops"
+    );
   });
 
   it("Invariant 6: Deterministically answers 'What was the score?' with overall Growth Readiness Score", () => {
@@ -258,8 +289,8 @@ describe("Canonical Report Truth & Grounded Q&A Invariants", () => {
     expect(prompt).toContain('"strongestDimension":"Positioning"');
     expect(prompt).toContain('"weakestDimension":"Growth Foundation"');
     expect(prompt).toContain('"overallScore":82');
-    expect(prompt).toContain("BEGIN TYPED UNTRUSTED AUDIT DATA");
-    expect(prompt).toContain("END TYPED UNTRUSTED AUDIT DATA");
+    expect(prompt).toContain("BEGIN UNTRUSTED REPORT SUPPORT DATA");
+    expect(prompt).toContain("END UNTRUSTED REPORT SUPPORT DATA");
   });
 
   it("Invariant 9: applyPublicAuditQaPolicy sanitizes internal terminology ('typed audit data', 'relativeStanding', etc.)", () => {
@@ -304,5 +335,75 @@ describe("Canonical Report Truth & Grounded Q&A Invariants", () => {
     const linearFacts = deriveCanonicalReportFacts(LINEAR_AUDIT_CONTEXT);
     expect(linearFacts.companyName).toBe("Linear");
     expect(linearFacts.strongestDimension.label).toBe("Positioning");
+  });
+
+  it.each([
+    ["Why is Growth Foundation the weakest?", "Growth Foundation was the weakest area"],
+    ["Why is Positioning the strongest?", "Positioning was the strongest area"],
+    ["Why is Conversion weaker than Positioning?", "Conversion ranked below Positioning"],
+    ["Isn't Growth Foundation scalable enough?", "Growth Foundation was the weakest area"],
+    ["What evidence supports Growth Foundation being weakest?", "Growth Foundation was the weakest area"],
+  ])("deterministically anchors explanatory question: %s", (question, anchor) => {
+    const answer = fallbackGroundedAnswer(LOADED_LINEAR_CONTEXT, question);
+
+    expect(answer.answer).toContain(anchor);
+    expect(answer.answer).not.toContain("Conversion was the weakest");
+    expect(answer.answer).not.toContain("Website & UX was the strongest");
+  });
+
+  it("corrects a false weakest premise before explaining the canonical area", () => {
+    const answer = fallbackGroundedAnswer(
+      LOADED_LINEAR_CONTEXT,
+      "Why is Conversion the weakest?"
+    );
+
+    expect(answer.answer).toContain(
+      "Growth Foundation, rather than Conversion, was the weakest area in this audit"
+    );
+    expect(answer.answer).toContain(
+      "Growth loops rely heavily on viral word-of-mouth"
+    );
+  });
+
+  it("keeps accepted sources available without allowing them to choose the ranking", () => {
+    const answer = fallbackGroundedAnswer(
+      LOADED_LINEAR_CONTEXT,
+      "What evidence supports Growth Foundation being weakest?"
+    );
+
+    expect(answer.citations).toEqual(["S3"]);
+    expect(answer.answer).toContain("do not change the report's ranking");
+  });
+
+  it("round-trips fresh and restored workspace facts through the score-free projection", () => {
+    const canonical = deriveCanonicalReportFacts(LINEAR_AUDIT_CONTEXT);
+    const projection = projectCanonicalReportFacts(LINEAR_AUDIT_CONTEXT);
+    const restored = deriveCanonicalReportFacts({
+      overallScore: 82,
+      identity: LINEAR_AUDIT_CONTEXT.companyIdentity,
+      the_verdict: LINEAR_AUDIT_CONTEXT.outcome.finalVerdict,
+      priority_matrix: LINEAR_AUDIT_CONTEXT.priorityMatrix,
+      pillars: Object.fromEntries(
+        Object.entries(LINEAR_AUDIT_CONTEXT.pillars).map(([key, pillar]) => [
+          key,
+          {
+            confidence: pillar.confidence,
+            reason: pillar.reason,
+            strengths: pillar.strengths,
+            weaknesses: pillar.weaknesses,
+          },
+        ])
+      ),
+      canonicalReportFacts: projection,
+    });
+
+    expect(restored.dimensionRankingAvailable).toBe(true);
+    expect(restored.strongestDimension.key).toBe(
+      canonical.strongestDimension.key
+    );
+    expect(restored.weakestDimension.key).toBe(canonical.weakestDimension.key);
+    expect(restored.overallScore).toBe(canonical.overallScore);
+    expect(restored.primaryBottleneck).toBe(canonical.primaryBottleneck);
+    expect(restored.priorities[0]?.task).toBe(canonical.priorities[0]?.task);
   });
 });

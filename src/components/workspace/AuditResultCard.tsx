@@ -25,9 +25,12 @@ export function AuditResultCard({ result, onOpenAuditContext }: AuditResultCardP
   const reportId = facts.reportId || result.reportId;
   const constraint = facts.primaryBottleneck;
   const priorities = facts.priorities.slice(0, 3);
-  const strongest = facts.strongestDimension;
+  const strongest = facts.dimensionRankingAvailable
+    ? facts.strongestDimension
+    : undefined;
   const weakest =
-    facts.strongestDimension.score === facts.weakestDimension.score
+    !facts.dimensionRankingAvailable ||
+    facts.strongestDimension.key === facts.weakestDimension.key
       ? undefined
       : facts.weakestDimension;
 

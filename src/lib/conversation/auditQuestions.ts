@@ -24,6 +24,7 @@ export type AuditFollowupRoute =
   | { type: "strongest_dimension" }
   | { type: "weakest_dimension" }
   | { type: "primary_bottleneck" }
+  | { type: "highest_opportunity" }
   | { type: "top_priority" }
   | { type: "pillar_score"; pillar: PillarKey }
   | { type: "score_breakdown" }
@@ -118,6 +119,10 @@ export function classifyAuditFollowup(
       ? { type: "research_extension" }
       : { type: "missing_context" };
   }
+  const asksForExplanation =
+    /^(?:why|how|isn['’]?t|is not|what evidence|which evidence)\b/i.test(
+      trimmed
+    );
 
   if (
     /\b(?:what|which)\s+(?:was|is)\s+(?:our|the|this\s+company(?:'s)?|their)?\s*(?:overall\s+)?(?:growth readiness\s+)?score\b|\bwhat\s+(?:overall\s+)?growth readiness score\s+did\b|\bwhat\s+was\s+(?:the\s+)?overall\s+score\b/i.test(
@@ -128,29 +133,31 @@ export function classifyAuditFollowup(
   }
 
   if (
-    /\b(?:what|which)\s+(?:was|is)\s+(?:the\s+)?(?:strongest|highest|top|best)\s+(?:pillar|dimension|area|part|score|scored|component)\b/i.test(
-      trimmed
-    ) ||
-    /\b(?:what|which)\s+(?:pillar|dimension|area)\s+(?:was|is|performed)\s+(?:the\s+)?(?:strongest|highest|best|top)\b/i.test(
-      trimmed
-    ) ||
-    /\b(?:strongest|highest scoring|top performing)\s+(?:pillar|dimension|area)\b/i.test(
-      trimmed
-    )
+    !asksForExplanation &&
+    (/\b(?:what|which)\s+(?:was|is)\s+(?:the\s+)?(?:strongest|highest|top|best)\s+(?:pillar|dimension|area|part|score|scored|component)\b/i.test(
+        trimmed
+      ) ||
+      /\b(?:what|which)\s+(?:pillar|dimension|area)\s+(?:was|is|performed)\s+(?:the\s+)?(?:strongest|highest|best|top)\b/i.test(
+        trimmed
+      ) ||
+      /\b(?:strongest|highest scoring|top performing)\s+(?:pillar|dimension|area)\b/i.test(
+        trimmed
+      ))
   ) {
     return hasActiveReport ? { type: "strongest_dimension" } : { type: "missing_context" };
   }
 
   if (
-    /\b(?:what|which)\s+(?:was|is)\s+(?:the\s+)?(?:weakest|lowest|worst|bottom)\s+(?:pillar|dimension|area|part|score|scored|component)\b/i.test(
-      trimmed
-    ) ||
-    /\b(?:what|which)\s+(?:pillar|dimension|area)\s+(?:was|is|performed)\s+(?:the\s+)?(?:weakest|lowest|worst|bottom)\b/i.test(
-      trimmed
-    ) ||
-    /\b(?:weakest|lowest scoring|worst performing)\s+(?:pillar|dimension|area)\b/i.test(
-      trimmed
-    )
+    !asksForExplanation &&
+    (/\b(?:what|which)\s+(?:was|is)\s+(?:the\s+)?(?:weakest|lowest|worst|bottom)\s+(?:pillar|dimension|area|part|score|scored|component)\b/i.test(
+        trimmed
+      ) ||
+      /\b(?:what|which)\s+(?:pillar|dimension|area)\s+(?:was|is|performed)\s+(?:the\s+)?(?:weakest|lowest|worst|bottom)\b/i.test(
+        trimmed
+      ) ||
+      /\b(?:weakest|lowest scoring|worst performing)\s+(?:pillar|dimension|area)\b/i.test(
+        trimmed
+      ))
   ) {
     return hasActiveReport ? { type: "weakest_dimension" } : { type: "missing_context" };
   }
@@ -162,6 +169,19 @@ export function classifyAuditFollowup(
     /\b(?:primary|main|biggest|core)\s+(?:bottleneck|constraint)\b/i.test(trimmed)
   ) {
     return hasActiveReport ? { type: "primary_bottleneck" } : { type: "missing_context" };
+  }
+
+  if (/\b(?:highest|biggest|best|top)[\s-]+(?:leverage\s+)?opportunity\b/i.test(trimmed)) {
+    return hasActiveReport ? { type: "highest_opportunity" } : { type: "missing_context" };
+  }
+
+  if (
+    /\b(?:what|which)\b.*\b(?:fix|address|improve|do|priority|recommendation)\b.*\bfirst\b/i.test(
+      trimmed
+    ) ||
+    /\b(?:top|highest|first)\s+(?:priority|recommendation)\b/i.test(trimmed)
+  ) {
+    return hasActiveReport ? { type: "top_priority" } : { type: "missing_context" };
   }
 
   const explicitScorePillar = referencedPillar(trimmed);
@@ -317,17 +337,135 @@ function deterministicAnswer(
 }
 
 function referencedPillar(question: string): PillarKey | null {
+  return referencedPillars(question)[0] ?? null;
+}
+
+function referencedPillars(question: string): PillarKey[] {
   const normalized = question.toLowerCase();
-  for (const key of Object.keys(PILLAR_ALIASES) as PillarKey[]) {
-    if (
-      PILLAR_ALIASES[key].some((alias) =>
-        normalized.includes(alias.toLowerCase())
-      )
-    ) {
-      return key;
+  const matches = (Object.keys(PILLAR_ALIASES) as PillarKey[]).flatMap((key) => {
+    const indices = PILLAR_ALIASES[key]
+      .map((alias) => normalized.indexOf(alias.toLowerCase()))
+      .filter((index) => index >= 0);
+    return indices.length > 0 ? [{ key, index: Math.min(...indices) }] : [];
+  });
+  return matches
+    .sort((left, right) => left.index - right.index)
+    .map((match) => match.key);
+}
+
+const PILLAR_SOURCE_CATEGORIES: Record<
+  PillarKey,
+  AuditContextSource["category"][]
+> = {
+  positioning: ["positioning", "identity"],
+  messaging: ["messaging", "identity"],
+  website_ux: ["identity", "conversion"],
+  conversion: ["conversion"],
+  trust: ["trust"],
+  competition: ["market"],
+  growth_foundation: ["growth"],
+};
+
+function explanationSources(
+  loaded: LoadedAuditContext,
+  pillars: PillarKey[]
+): AuditContextSource[] {
+  const categories = new Set(
+    pillars.flatMap((pillar) => PILLAR_SOURCE_CATEGORIES[pillar])
+  );
+  return loaded.context.sources
+    .filter((source) => source.category && categories.has(source.category))
+    .slice(0, 3);
+}
+
+function dimensionExplanation(
+  loaded: LoadedAuditContext,
+  question: string,
+  pillars: PillarKey[]
+): AuditQaAnswer {
+  const facts = deriveCanonicalReportFacts(loaded.context);
+  const asksWeakest = /\b(?:weakest|lowest|worst|bottom)\b/i.test(question);
+  const asksStrongest = /\b(?:strongest|highest|best|top)\b/i.test(question);
+  const asksComparison =
+    pillars.length >= 2 &&
+    /\b(?:weaker|stronger|better|worse|below|above|compare|versus|vs\.?)\b/i.test(
+      question
+    );
+
+  let anchor: string;
+  let explanationKeys: PillarKey[];
+
+  if (asksWeakest) {
+    const canonical = facts.weakestDimension;
+    const asserted = pillars[0];
+    const assertedDimension = asserted ? facts.dimensions[asserted] : undefined;
+    if (assertedDimension?.standing === "weakest") {
+      anchor = `${assertedDimension.label} ${assertedDimension.standingLabel} in this audit.`;
+      explanationKeys = [assertedDimension.key];
+    } else {
+      anchor = asserted
+        ? `${canonical.label}, rather than ${PILLAR_LABELS[asserted]}, was the weakest area in this audit.`
+        : `${canonical.label} was the weakest area in this audit.`;
+      explanationKeys = [canonical.key];
     }
+  } else if (asksStrongest) {
+    const canonical = facts.strongestDimension;
+    const asserted = pillars[0];
+    const assertedDimension = asserted ? facts.dimensions[asserted] : undefined;
+    if (assertedDimension?.standing === "strongest") {
+      anchor = `${assertedDimension.label} ${assertedDimension.standingLabel} in this audit.`;
+      explanationKeys = [assertedDimension.key];
+    } else {
+      anchor = asserted
+        ? `${canonical.label}, rather than ${PILLAR_LABELS[asserted]}, was the strongest area in this audit.`
+        : `${canonical.label} was the strongest area in this audit.`;
+      explanationKeys = [canonical.key];
+    }
+  } else if (asksComparison) {
+    const left = facts.dimensions[pillars[0]];
+    const right = facts.dimensions[pillars[1]];
+    anchor =
+      left.score === right.score
+        ? `${left.label} and ${right.label} were assessed in line with each other in this audit.`
+        : left.score < right.score
+          ? `${left.label} ranked below ${right.label} in this audit.`
+          : `${left.label} ranked above ${right.label} in this audit.`;
+    explanationKeys = [left.key, right.key];
+  } else {
+    const dimension = facts.dimensions[pillars[0]];
+    anchor = `${dimension.label} ${dimension.standingLabel} in this audit.`;
+    explanationKeys = [dimension.key];
   }
-  return null;
+
+  const explanations = explanationKeys.map((key) => {
+    const dimension = facts.dimensions[key];
+    const details =
+      dimension.standing === "strongest"
+        ? dimension.strengths
+        : dimension.weaknesses;
+    const detail = details.length > 0 ? ` Key signals: ${details.join("; ")}.` : "";
+    return `${dimension.label}: ${dimension.reason}${detail}`;
+  });
+  const sources = explanationSources(loaded, explanationKeys);
+  const sourceNote =
+    sources.length > 0
+      ? " The accepted sources listed with this answer support that explanation; they do not change the report's ranking."
+      : "";
+  const confidence = explanationKeys.every(
+    (key) => facts.dimensions[key].confidence.toLowerCase() === "high"
+  )
+    ? "high"
+    : "medium";
+
+  return deterministicAnswer(`${anchor} ${explanations.join(" ")}${sourceNote}`, {
+    citations: sources.map((source) => source.sourceId),
+    answerType: "score_explanation",
+    confidence,
+    limitations:
+      /\b(?:evidence|source|support)\b/i.test(question) && sources.length === 0
+        ? ["No accepted source was categorized specifically for this area; the explanation is limited to the completed report."]
+        : [],
+  });
 }
 
 function pillarStanding(
@@ -438,12 +576,14 @@ export function applyPublicAuditQaPolicy(
   };
 }
 
-export function fallbackGroundedAnswer(
+export function composeCanonicalGroundedAnswer(
   loaded: LoadedAuditContext,
   question: string
 ): AuditQaAnswer {
   const context = loaded.context;
-  const pillarKey = referencedPillar(question);
+  const pillarKeys = referencedPillars(question);
+  const pillarKey = pillarKeys[0] ?? null;
+  const facts = deriveCanonicalReportFacts(context);
 
   if (/\b(weight|weighted|percentage|percent)\b/i.test(question) && pillarKey) {
     const weight = Math.round(PILLAR_WEIGHTS[pillarKey] * 100);
@@ -459,10 +599,10 @@ export function fallbackGroundedAnswer(
   }
 
   if (/\b(fix first|recommend|priority|prioritize|improve first)\b/i.test(question)) {
-    const first = context.priorityMatrix[0];
+    const first = facts.priorities[0];
     if (first) {
       return deterministicAnswer(
-        `The first stored priority is **${first.task}** (${first.impact} impact, ${first.effort} effort). ${first.why}`,
+        `The highest-priority recommendation in this audit is **${first.task}** (${first.impact} impact, ${first.effort} effort). ${first.why}`,
         {
           citations: [],
           answerType: "recommendation",
@@ -475,23 +615,19 @@ export function fallbackGroundedAnswer(
     }
   }
 
-  if (pillarKey) {
-    const pillar = context.pillars[pillarKey];
-    const gap = pillar.weaknesses[0]
-      ? ` The leading stored weakness is: ${pillar.weaknesses[0]}`
-      : "";
+  if (!pillarKey && /\b(?:overall|growth readiness)?\s*score\b/i.test(question)) {
     return deterministicAnswer(
-      `${PILLAR_LABELS[pillarKey]} ${pillarStanding(context, pillarKey)}. The stored audit basis is: ${pillar.reason}${gap} Confidence in that area was recorded as ${pillar.confidence || "unspecified"}.`,
+      `The Growth Readiness Score in this report is **${facts.overallScore}/100**. ${facts.executiveAssessment}`,
       {
         citations: [],
         answerType: "score_explanation",
-        confidence: pillar.confidence.toLowerCase() === "high" ? "high" : "medium",
-        limitations: [
-          "The interpretive model was unavailable, so this answer is limited to the stored audit fields.",
-        ],
+        confidence: "high",
+        limitations: [],
       }
     );
   }
+
+  if (pillarKey) return dimensionExplanation(loaded, question, pillarKeys);
 
   const sourcesWithFindings = context.sources.filter(
     (source) => source.keyFindings.length > 0
@@ -499,12 +635,12 @@ export function fallbackGroundedAnswer(
   if (/\b(evidence|source|support|find|saw|see)\b/i.test(question)) {
     if (sourcesWithFindings.length > 0) {
       return deterministicAnswer(
-        sourcesWithFindings
+        `The accepted evidence retained for this report comes from ${sourcesWithFindings
           .map(
             (source) =>
-              `${source.keyFindings[0]} [${source.sourceId}]`
+              `${source.path || "/"}${source.category ? ` (${source.category})` : ""} [${source.sourceId}]`
           )
-          .join(" "),
+          .join(", ")}. These sources support the report's explanations; they do not redefine its conclusions.`,
         {
           citations: sourcesWithFindings.map((source) => source.sourceId),
           answerType: "evidence",
@@ -527,15 +663,18 @@ export function fallbackGroundedAnswer(
   }
 
   return deterministicAnswer(
-    "I could not complete the interpretive answer, but the stored audit remains unchanged. Ask about a specific pillar, source, priority, or score calculation and I can answer from deterministic report fields.",
+    "The completed report remains the source of truth. Ask about a specific area, source, priority, bottleneck, opportunity, or the overall score and I can answer from that report.",
     {
       citations: [],
       answerType: "general",
       confidence: "low",
-      limitations: ["The interpretive model was unavailable."],
+      limitations: ["The question did not identify a specific report conclusion."],
     }
   );
 }
+
+// Kept for callers/tests that still use the former model-failure name.
+export const fallbackGroundedAnswer = composeCanonicalGroundedAnswer;
 
 export function answerDeterministically(
   route: AuditFollowupRoute,
@@ -653,6 +792,21 @@ export function answerDeterministically(
     );
   }
 
+  if (route.type === "highest_opportunity") {
+    const facts = deriveCanonicalReportFacts(context);
+    if (facts.highestOpportunity) {
+      return deterministicAnswer(
+        `The highest-leverage opportunity identified in this audit is: **${facts.highestOpportunity}**`,
+        {
+          citations: [],
+          answerType: "recommendation",
+          confidence: "high",
+          limitations: [],
+        }
+      );
+    }
+  }
+
   if (route.type === "top_priority") {
     const facts = deriveCanonicalReportFacts(context);
     const first = facts.priorities[0];
@@ -761,7 +915,7 @@ export function answerDeterministically(
 
   if (route.type === "research_extension") {
     return deterministicAnswer(
-      "That would require a new bounded research-extension action. I have not inspected the requested page in this conversation, and Phase 5A-2 does not start new website acquisition from follow-up chat.",
+      "That would require a new bounded investigation. I have not inspected the requested page in this conversation, and follow-up questions do not fetch new website evidence.",
       {
         citations: [],
         answerType: "research_extension",

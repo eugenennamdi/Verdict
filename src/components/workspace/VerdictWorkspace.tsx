@@ -47,6 +47,7 @@ function compactRecentResult(result: AuditSummary): AuditSummary {
   return {
     reportId: result.reportId,
     overallScore: result.overallScore,
+    canonicalReportFacts: result.canonicalReportFacts,
     identity: result.identity,
     pagesInspected: result.pagesInspected ?? successfulEvidenceSources(result.evidence).length,
     evidence: result.evidence,
