@@ -183,10 +183,6 @@ function groundedContext(loaded: LoadedAuditContext) {
       pagesInspected: context.investigation.pagesInspected,
       pagesAccepted:
         context.investigation.pagesAccepted ?? context.sources.length,
-      finalCoverage: { ...context.investigation.finalCoverage },
-      planningRounds: context.investigation.planningRounds,
-      stopReason: context.investigation.stopReason,
-      budgetUsage: { ...context.investigation.budgetUsage },
     },
     sources: context.sources.slice(0, 5).map((source) => ({
       sourceId: source.sourceId,
