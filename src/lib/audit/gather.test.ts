@@ -8,6 +8,8 @@ import { createTracer } from "./events";
 import type { EvidenceCandidate } from "./discover";
 import {
   createEvidencePage,
+  isAcceptedEvidencePage,
+  withEvidenceAdmission,
   type EvidenceCoverageAssessment,
   type EvidencePage,
 } from "./evidence";
@@ -94,6 +96,7 @@ function acquiredPage(url: string, category: EvidencePage["category"], text = "p
     acquisitionMethod: "firecrawl",
     markdown: text,
     status: "acquired",
+    admission: { status: "accepted", method: "model" },
   });
 }
 
@@ -104,6 +107,10 @@ function services(
     discover: async () => candidates,
     plan: async () => planFor([candidates[0]]),
     acquire: async (input) => acquiredPage(input.url, input.category),
+    admit: async (input) =>
+      input.pages.map((page) =>
+        withEvidenceAdmission(page, { status: "accepted", method: "model" })
+      ),
     now: () => 0,
     ...overrides,
   };
@@ -230,6 +237,104 @@ describe("gatherAuditEvidence boundaries", () => {
     expect(tracer.events.some((event) => event.type === "evidence.acquired")).toBe(false);
   });
 
+  it("rejects irrelevant fetched content, excludes it from coverage, and selects another page", async () => {
+    const plan = vi
+      .fn()
+      .mockResolvedValueOnce(planFor([candidates[0]]))
+      .mockResolvedValueOnce(planFor([candidates[1]]));
+    const admit = vi.fn(async (input: { pages: EvidencePage[] }) =>
+      input.pages.map((page) =>
+        page.url === candidates[0].url
+          ? withEvidenceAdmission(page, {
+              status: "rejected_irrelevant",
+              method: "model",
+              reasonCode: "unrelated_entity",
+            })
+          : withEvidenceAdmission(page, {
+              status: "accepted",
+              method: "model",
+            })
+      )
+    );
+    const result = await gatherAuditEvidence({
+      rootUrl: "https://example.com",
+      identity,
+      homepage: homepage(),
+      budget: { maxPagesTotal: 3, maxUrlsPerRound: 1, maxPlanningRounds: 2 },
+      tracer: createTracer(),
+      services: services({ plan, admit }),
+    });
+
+    expect(plan).toHaveBeenCalledTimes(2);
+    expect(result.pageAttempts).toBe(3);
+    expect(result.pages.filter(isAcceptedEvidencePage).map((page) => page.url)).toEqual([
+      "https://example.com/",
+      candidates[1].url,
+    ]);
+    expect(result.coverage.conversion).toBe("low");
+    expect(result.coverage.trust).toBe("high");
+  });
+
+  it("keeps five attempts bounded when every supporting page is rejected", async () => {
+    const moreCandidates: EvidenceCandidate[] = Array.from(
+      { length: 6 },
+      (_, index) => ({
+        url: `https://example.com/product/page-${index}`,
+        path: `/product/page-${index}`,
+        category: "positioning" as const,
+        ranking: { priority: 80 },
+      })
+    );
+    const result = await gatherAuditEvidence({
+      rootUrl: "https://example.com",
+      identity,
+      homepage: homepage(),
+      tracer: createTracer(),
+      services: services({
+        discover: async () => moreCandidates,
+        plan: async (input) => planFor(input.candidates.slice(0, 2)),
+        admit: async (input) =>
+          input.pages.map((page) =>
+            withEvidenceAdmission(page, {
+              status: "rejected_irrelevant",
+              method: "model",
+              reasonCode: "unrelated_subject",
+            })
+          ),
+      }),
+    });
+
+    expect(result.pageAttempts).toBe(5);
+    expect(result.stopReason).toBe("page_budget");
+    expect(result.pages.filter(isAcceptedEvidencePage)).toHaveLength(1);
+  });
+
+  it("preserves a legitimate five-page accepted audit", async () => {
+    const fivePageCandidates: EvidenceCandidate[] = [
+      ...candidates,
+      {
+        url: "https://example.com/docs",
+        path: "/docs",
+        category: "growth",
+        ranking: { priority: 50 },
+      },
+    ];
+    const result = await gatherAuditEvidence({
+      rootUrl: "https://example.com",
+      identity,
+      homepage: homepage(),
+      tracer: createTracer(),
+      services: services({
+        discover: async () => fivePageCandidates,
+        plan: async (input) => planFor(input.candidates.slice(0, 2)),
+      }),
+    });
+
+    expect(result.pageAttempts).toBe(5);
+    expect(result.pages.filter(isAcceptedEvidencePage)).toHaveLength(5);
+    expect(result.stopReason).toBe("page_budget");
+  });
+
   it("continues homepage-only when discovery fails", async () => {
     const tracer = createTracer();
     const result = await gatherAuditEvidence({
@@ -272,6 +377,14 @@ describe("gatherAuditEvidence boundaries", () => {
     expect(tracer.events.map((event) => event.type)).toEqual([
       "site.pages_discovered",
     ]);
+    expect(tracer.events[0]).toMatchObject({
+      message: "1 candidate URL retained",
+      data: {
+        count: 1,
+        candidatesRetained: 1,
+        countSemantics: "retained_candidate_urls",
+      },
+    });
   });
 
   it("emits only events for actions that occur and never exposes planner reasoning", async () => {
@@ -339,6 +452,7 @@ describe("combineEvidenceForGrading", () => {
       [homepage("x".repeat(100))],
       { maxEvidenceChars: 50 }
     );
-    expect(combined).toHaveLength(50);
+    expect(combined.length).toBeLessThanOrEqual(50);
+    expect(combined).not.toContain("S1");
   });
 });

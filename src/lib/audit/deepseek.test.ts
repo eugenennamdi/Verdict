@@ -90,6 +90,7 @@ describe("DeepSeek audit Chat Completions adapter", () => {
   it.each([
     ["normalization", "disabled", undefined, 800],
     ["planner", "enabled", "low", 1_600],
+    ["admission", "enabled", "low", 1_200],
     ["grader", "enabled", "low", 5_000],
     ["qa", "enabled", "low", 2_400],
   ] as const)(
@@ -140,12 +141,14 @@ describe("DeepSeek audit Chat Completions adapter", () => {
     expect(DEEPSEEK_REASONING_POLICY).toEqual({
       normalization: { thinking: "disabled" },
       planner: { thinking: "enabled", effort: "low" },
+      admission: { thinking: "enabled", effort: "low" },
       grader: { thinking: "enabled", effort: "low" },
       qa: { thinking: "enabled", effort: "low" },
     });
     expect(DEEPSEEK_OUTPUT_TOKEN_LIMITS).toEqual({
       normalization: 800,
       planner: 1_600,
+      admission: 1_200,
       grader: 5_000,
       qa: 2_400,
     });
@@ -193,23 +196,29 @@ describe("DeepSeek audit Chat Completions adapter", () => {
     }
   );
 
-  it("classifies empty content and malformed JSON as attempt-local", () => {
-    for (const [content, category] of [
-      ["", "missing_output"],
-      ["not-json", "malformed_json"],
-    ] as const) {
-      expect(() =>
-        parseDeepSeekChatCompletionPayload({
-          choices: [{ finish_reason: "stop", message: { content } }],
-        })
-      ).toThrowError(
-        expect.objectContaining({
-          name: "AttemptLocalModelProviderError",
-          category,
-          telemetry: expect.objectContaining({ finishReason: "stop" }),
-        })
-      );
-    }
+  it("keeps empty content attempt-local", () => {
+    expect(() =>
+      parseDeepSeekChatCompletionPayload({
+        choices: [{ finish_reason: "stop", message: { content: "" } }],
+      })
+    ).toThrowError(
+      expect.objectContaining({
+        name: "AttemptLocalModelProviderError",
+        category: "missing_output",
+        telemetry: expect.objectContaining({ finishReason: "stop" }),
+      })
+    );
+  });
+
+  it("leaves syntax validation to the canonical structured-output boundary", () => {
+    expect(
+      parseDeepSeekChatCompletionPayload({
+        choices: [{ finish_reason: "stop", message: { content: "not-json" } }],
+      })
+    ).toEqual({
+      text: "not-json",
+      telemetry: { httpStatus: 200, finishReason: "stop" },
+    });
   });
 
   it("keeps content filtering terminal", () => {

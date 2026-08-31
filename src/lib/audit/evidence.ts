@@ -12,6 +12,32 @@ export type EvidenceCategory = (typeof EVIDENCE_CATEGORIES)[number];
 
 export type EvidencePageStatus = "acquired" | "failed" | "skipped";
 
+export const EVIDENCE_REJECTION_REASONS = [
+  "unrelated_entity",
+  "unrelated_subject",
+  "user_generated_unrelated",
+  "stale_or_misrouted",
+  "relevance_unverified",
+] as const;
+
+export type EvidenceRejectionReason =
+  (typeof EVIDENCE_REJECTION_REASONS)[number];
+
+export type EvidenceAdmission =
+  | {
+      status: "pending";
+      method: "model";
+    }
+  | {
+      status: "accepted";
+      method: "homepage" | "model";
+    }
+  | {
+      status: "rejected_irrelevant";
+      method: "model" | "fail_closed";
+      reasonCode: EvidenceRejectionReason;
+    };
+
 export type EvidenceAcquisitionMethod =
   | "provided"
   | "firecrawl"
@@ -38,6 +64,7 @@ export type EvidencePage = {
   markdown: string;
   chars: number;
   status: EvidencePageStatus;
+  admission?: EvidenceAdmission;
   summary?: string;
   signals?: EvidenceSignals;
   error?: string;
@@ -45,7 +72,7 @@ export type EvidencePage = {
 
 export type EvidencePageSummary = Omit<
   EvidencePage,
-  "markdown" | "error"
+  "markdown" | "error" | "admission"
 >;
 
 export type EvidenceCoverageLevel = "low" | "medium" | "high";
@@ -58,8 +85,11 @@ export type EvidenceCoverageAssessment = Record<
 export type EvidenceCoverage = {
   pagesTotal: number;
   pagesAcquired: number;
+  pagesAccepted: number;
+  pagesRejected: number;
   pagesFailed: number;
   charsTotal: number;
+  acceptedCharsTotal: number;
   categories: Partial<Record<EvidenceCategory, number>>;
 };
 
@@ -128,6 +158,7 @@ export function createEvidencePage(input: {
   acquisitionMethod?: EvidenceAcquisitionMethod;
   markdown?: string;
   status: EvidencePageStatus;
+  admission?: EvidenceAdmission;
   error?: string;
 }): EvidencePage {
   const normalized = normalizedUrlParts(input.url);
@@ -146,9 +177,39 @@ export function createEvidencePage(input: {
     markdown,
     chars: markdown.length,
     status: input.status,
+    ...(input.status === "acquired"
+      ? {
+          admission:
+            input.admission ??
+            (input.role === "homepage"
+              ? { status: "accepted", method: "homepage" }
+              : { status: "pending", method: "model" }),
+        }
+      : {}),
     ...(compact ? compact : {}),
     ...(input.error ? { error: input.error } : {}),
   };
+}
+
+export function withEvidenceAdmission(
+  page: EvidencePage,
+  admission: Exclude<EvidenceAdmission, { status: "pending" }>
+): EvidencePage {
+  if (page.status !== "acquired") return page;
+  return { ...page, admission };
+}
+
+export function isAcceptedEvidencePage(page: EvidencePage): boolean {
+  return (
+    page.status === "acquired" && page.admission?.status === "accepted"
+  );
+}
+
+export function isRejectedEvidencePage(page: EvidencePage): boolean {
+  return (
+    page.status === "acquired" &&
+    page.admission?.status === "rejected_irrelevant"
+  );
 }
 
 /**
@@ -269,7 +330,7 @@ export function summarizeEvidenceCoverage(
   const categories: EvidenceCoverage["categories"] = {};
 
   for (const page of pages) {
-    if (page.status === "acquired" && page.category) {
+    if (isAcceptedEvidencePage(page) && page.category) {
       categories[page.category] = (categories[page.category] ?? 0) + 1;
     }
   }
@@ -277,8 +338,15 @@ export function summarizeEvidenceCoverage(
   return {
     pagesTotal: pages.length,
     pagesAcquired: pages.filter((page) => page.status === "acquired").length,
+    pagesAccepted: pages.filter(isAcceptedEvidencePage).length,
+    pagesRejected: pages.filter(isRejectedEvidencePage).length,
     pagesFailed: pages.filter((page) => page.status === "failed").length,
     charsTotal: pages.reduce((total, page) => total + page.chars, 0),
+    acceptedCharsTotal: pages.reduce(
+      (total, page) =>
+        isAcceptedEvidencePage(page) ? total + page.chars : total,
+      0
+    ),
     categories,
   };
 }
@@ -297,7 +365,7 @@ export function assessEvidenceCoverage(
   };
 
   for (const page of pages) {
-    if (page.status !== "acquired") continue;
+    if (!isAcceptedEvidencePage(page)) continue;
 
     if (page.role === "homepage") {
       coverage.identity = "medium";

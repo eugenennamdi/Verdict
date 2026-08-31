@@ -11,6 +11,7 @@ type GradeMock = (
   markdown: string,
   options?: {
     sources?: Array<{ sourceId: string; url: string }>;
+    deadlineAt?: number;
     onModelResult?: (
       task: "normalization" | "planner" | "grader" | "qa",
       metadata: {
@@ -49,7 +50,7 @@ type DiscoveryMock = () => Promise<
   Array<{
     url: string;
     path: string;
-    category?: "conversion";
+    category?: "conversion" | "trust" | "positioning";
     ranking: { priority: number };
   }>
 >;
@@ -109,6 +110,12 @@ const mocks = vi.hoisted(() => ({
     throw new Error("planner unavailable");
   }),
   discoverInternalPages: vi.fn<DiscoveryMock>(async () => []),
+  admitEvidencePages: vi.fn(async (input: { pages: Array<Record<string, unknown>> }) =>
+    input.pages.map((page) => ({
+      ...page,
+      admission: { status: "accepted", method: "model" },
+    }))
+  ),
   persistReport: vi.fn(),
 }));
 
@@ -128,11 +135,19 @@ vi.mock("@/lib/audit/discover", () => ({
   discoverInternalPages: mocks.discoverInternalPages,
 }));
 
+vi.mock("@/lib/audit/admission", () => ({
+  admitEvidencePages: mocks.admitEvidencePages,
+}));
+
 vi.mock("@/lib/audit/persist", () => ({
   persistReport: mocks.persistReport,
 }));
 
-import { runVerdictAudit } from "./runVerdictAudit";
+import {
+  AUDIT_FINALIZATION_HEADROOM_MS,
+  DEFAULT_AUDIT_DEADLINE_MS,
+  runVerdictAudit,
+} from "./runVerdictAudit";
 
 describe("runVerdictAudit homepage-only regression", () => {
   beforeEach(() => {
@@ -165,11 +180,13 @@ describe("runVerdictAudit homepage-only regression", () => {
     expect(result.evidence[0]).not.toHaveProperty("markdown");
     expect(result.investigation).toEqual({
       candidatesDiscovered: 0,
+      candidatesRetained: 0,
       planningRounds: 0,
       pageAttempts: 1,
       stopReason: "page_budget",
     });
     expect(result.pagesInspected).toBe(1);
+    expect(result.pagesAccepted).toBe(1);
     expect(result.stopReason).toBe("page_budget");
     expect(result.budgetUsage).toMatchObject({
       pagesInspected: 1,
@@ -198,6 +215,9 @@ describe("runVerdictAudit homepage-only regression", () => {
         }),
       ],
     });
+    expect(mocks.gradeFromMarkdown.mock.calls[0][2]?.deadlineAt).toEqual(
+      expect.any(Number)
+    );
     expect(result.auditContext.sources[0].sourceId).toBe("S1");
     expect(result.modelProvenance).toEqual({
       normalization: {
@@ -209,6 +229,7 @@ describe("runVerdictAudit homepage-only regression", () => {
         fallbackUsed: false,
       },
       planner: [],
+      admission: [],
       grader: {
         requestedPrimaryModel: "gemini-3.7-flash",
         provider: "deepseek",
@@ -219,6 +240,26 @@ describe("runVerdictAudit homepage-only regression", () => {
       },
     });
     expect(result.auditContext.models).toEqual(result.modelProvenance);
+  });
+
+  it("enforces the overall audit deadline before acquisition or persistence", async () => {
+    await expect(
+      runVerdictAudit({
+        url: "https://example.com",
+        persist: true,
+        deadlineAt: Date.now() - 1,
+      })
+    ).rejects.toMatchObject({ name: "ModelAvailabilityError", category: "timeout" });
+
+    expect(mocks.fetchContextDetailed).not.toHaveBeenCalled();
+    expect(mocks.gradeFromMarkdown).not.toHaveBeenCalled();
+    expect(mocks.persistReport).not.toHaveBeenCalled();
+  });
+
+  it("keeps the audit deadline below the route envelope with finalization headroom", () => {
+    expect(DEFAULT_AUDIT_DEADLINE_MS).toBe(200_000);
+    expect(AUDIT_FINALIZATION_HEADROOM_MS).toBe(20_000);
+    expect(DEFAULT_AUDIT_DEADLINE_MS).toBeLessThan(300_000);
   });
 
   it("continues to final grading when an additional page acquisition fails", async () => {
@@ -254,6 +295,90 @@ describe("runVerdictAudit homepage-only regression", () => {
     expect(result.pagesInspected).toBe(1);
     expect(result.evidenceTrace.pages).toHaveLength(1);
     expect(mocks.gradeFromMarkdown).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a relevance-rejected fetch out of grading, trace evidence, and audit context", async () => {
+    mocks.discoverInternalPages.mockResolvedValue([
+      {
+        url: "https://example.com/team/unrelated-business",
+        path: "/team/unrelated-business",
+        category: "trust",
+        ranking: { priority: 90 },
+      },
+    ]);
+    mocks.fetchContextDetailed.mockImplementation(async (url: string) => ({
+      markdown: url.includes("unrelated-business")
+        ? "A completely unrelated local business page"
+        : "A sufficiently detailed homepage used as deterministic test evidence.",
+      method: "firecrawl" as const,
+    }));
+    mocks.admitEvidencePages.mockImplementationOnce(async (input) =>
+      input.pages.map((page) => ({
+        ...page,
+        admission: {
+          status: "rejected_irrelevant",
+          method: "model",
+          reasonCode: "unrelated_entity",
+        },
+      }))
+    );
+
+    const result = await runVerdictAudit({
+      url: "https://example.com",
+      persist: false,
+      budget: { maxPagesTotal: 2 },
+    });
+
+    expect(result.pagesInspected).toBe(2);
+    expect(result.pagesAccepted).toBe(1);
+    expect(result.evidence.map((page) => page.url)).toEqual([
+      "https://example.com/",
+    ]);
+    expect(result.evidenceTrace.pages).toHaveLength(1);
+    expect(result.evidenceTrace.rejectedPages).toEqual([
+      expect.objectContaining({
+        url: "https://example.com/team/unrelated-business",
+        reasonCode: "unrelated_entity",
+      }),
+    ]);
+    expect(result.auditContext.sources.map((source) => source.url)).toEqual([
+      "https://example.com/",
+    ]);
+    expect(mocks.gradeFromMarkdown.mock.calls.at(-1)?.[1]).not.toContain(
+      "unrelated-business"
+    );
+  });
+
+  it("preserves the normal three-page accepted audit shape", async () => {
+    mocks.discoverInternalPages.mockResolvedValue([
+      {
+        url: "https://example.com/pricing",
+        path: "/pricing",
+        category: "conversion",
+        ranking: { priority: 100 },
+      },
+      {
+        url: "https://example.com/security",
+        path: "/security",
+        category: "trust",
+        ranking: { priority: 90 },
+      },
+    ]);
+    mocks.fetchContextDetailed.mockImplementation(async (url: string) => ({
+      markdown: `Relevant Example evidence for ${url}`,
+      method: "firecrawl" as const,
+    }));
+
+    const result = await runVerdictAudit({
+      url: "https://example.com",
+      persist: false,
+      budget: { maxPagesTotal: 3 },
+    });
+
+    expect(result.pagesInspected).toBe(3);
+    expect(result.pagesAccepted).toBe(3);
+    expect(result.auditContext.sources).toHaveLength(3);
+    expect(result.evidenceTrace.pages).toHaveLength(3);
   });
 
   it("persists compact evidence metadata including the stop reason", async () => {

@@ -17,8 +17,11 @@ describe("public audit result", () => {
       evidenceCoverage: {
         pagesTotal: 1,
         pagesAcquired: 1,
+        pagesAccepted: 1,
+        pagesRejected: 0,
         pagesFailed: 0,
         charsTotal: 100,
+        acceptedCharsTotal: 100,
         categories: { identity: 1 },
       },
       finalCoverage: {
@@ -31,6 +34,7 @@ describe("public audit result", () => {
         growth: "low",
       },
       pagesInspected: 1,
+      pagesAccepted: 1,
       budgetUsage: {
         pagesInspected: 1,
         pagesUsed: 1,
@@ -44,6 +48,7 @@ describe("public audit result", () => {
       stopReason: "discovery_failed",
       investigation: {
         candidatesDiscovered: 0,
+        candidatesRetained: 0,
         planningRounds: 0,
         pageAttempts: 1,
         stopReason: "discovery_failed",
@@ -65,6 +70,7 @@ describe("public audit result", () => {
 
     expect(summary).toMatchObject({
       pagesInspected: 1,
+      pagesAccepted: 1,
       finalCoverage: result.finalCoverage,
       budgetUsage: result.budgetUsage,
       stopReason: "discovery_failed",
@@ -75,6 +81,7 @@ describe("public audit result", () => {
       "overallScore",
       "identity",
       "pagesInspected",
+      "pagesAccepted",
       "evidence",
       "evidenceCoverage",
       "finalCoverage",

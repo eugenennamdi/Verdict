@@ -92,27 +92,133 @@ function validateGraderDetails(value: unknown): boolean {
   return true;
 }
 
+function stripMarkdownFence(text: string): string {
+  const trimmed = text.trim().replace(/^\uFEFF/, "");
+  if (!trimmed.startsWith("```")) return trimmed;
+
+  const firstLineEnd = trimmed.indexOf("\n");
+  const lastFence = trimmed.lastIndexOf("```");
+  if (firstLineEnd === -1 || lastFence <= firstLineEnd) return trimmed;
+  return trimmed.slice(firstLineEnd + 1, lastFence).trim();
+}
+
+function firstBalancedJsonObject(text: string): string | undefined {
+  const start = text.indexOf("{");
+  if (start === -1) return undefined;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const character = text[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+    } else if (character === "{") {
+      depth += 1;
+    } else if (character === "}") {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, index + 1);
+    }
+  }
+  return undefined;
+}
+
+function removeTrailingJsonCommas(text: string): string {
+  let result = "";
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (inString) {
+      result += character;
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+      result += character;
+      continue;
+    }
+    if (character === ",") {
+      let nextIndex = index + 1;
+      while (/\s/.test(text[nextIndex] ?? "")) nextIndex += 1;
+      if (text[nextIndex] === "}" || text[nextIndex] === "]") continue;
+    }
+    result += character;
+  }
+  return result;
+}
+
+function structuredOutputCandidates(text: string): string[] {
+  const stripped = stripMarkdownFence(text);
+  const balanced = firstBalancedJsonObject(stripped);
+  const candidates = [text.trim(), stripped, balanced]
+    .filter((candidate): candidate is string => Boolean(candidate))
+    .flatMap((candidate) => [candidate, removeTrailingJsonCommas(candidate)]);
+  return [...new Set(candidates)];
+}
+
+export function isNearCompleteGraderOutput(text: string): boolean {
+  const candidate = stripMarkdownFence(text);
+  const requiredMarkers = [
+    "company_name",
+    "score_interpretation",
+    "pillars",
+    "the_verdict",
+    "priority_matrix",
+    ...PILLAR_KEYS,
+  ];
+  return (
+    candidate.includes("{") &&
+    requiredMarkers.every((key) => candidate.includes(`"${key}"`))
+  );
+}
+
 export function parseAndValidateStructuredOutput(input: {
   task: AuditModelTask;
   text: string;
   schema: unknown;
 }): unknown {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(input.text);
-  } catch {
-    throw new AttemptLocalModelProviderError("malformed_json");
-  }
-
   const schemaProperties = isRecord(input.schema) && isRecord(input.schema.properties)
     ? input.schema.properties
     : {};
   const isCanonicalGraderSchema = "pillars" in schemaProperties;
-  const valid =
-    validateAgainstSchema(parsed, input.schema) &&
-    (!isCanonicalGraderSchema || validateGraderDetails(parsed));
-  if (!valid) {
-    throw new AttemptLocalModelProviderError("invalid_structured_output");
+  let parsedAnyCandidate = false;
+
+  for (const candidate of structuredOutputCandidates(input.text)) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(candidate);
+      parsedAnyCandidate = true;
+    } catch {
+      continue;
+    }
+
+    const valid =
+      validateAgainstSchema(parsed, input.schema) &&
+      (!isCanonicalGraderSchema || validateGraderDetails(parsed));
+    if (valid) return parsed;
   }
-  return parsed;
+
+  throw new AttemptLocalModelProviderError(
+    parsedAnyCandidate ? "invalid_structured_output" : "malformed_json"
+  );
 }

@@ -27,7 +27,7 @@ describe("createTracer", () => {
     ]);
     expect(tracer.events[0].message).toBe("Investigation started");
     expect(tracer.events[1].data).toEqual({ chars: 12 });
-    expect(tracer.events[2].message).toBe("Candidate pages discovered");
+    expect(tracer.events[2].message).toBe("Candidate URLs retained");
     expect(tracer.events.every((event) => typeof event.ts === "number")).toBe(true);
   });
 });

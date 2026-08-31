@@ -6,6 +6,7 @@ export function summarizeVerdictAuditResult(result: RunVerdictAuditResult) {
     overallScore: result.overallScore,
     identity: result.identity,
     pagesInspected: result.pagesInspected,
+    pagesAccepted: result.pagesAccepted,
     evidence: result.evidence,
     evidenceCoverage: result.evidenceCoverage,
     finalCoverage: result.finalCoverage,

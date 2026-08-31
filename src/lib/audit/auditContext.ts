@@ -75,6 +75,8 @@ export type AuditContextPackV1 = {
   }>;
   investigation: {
     pagesInspected: number;
+    pagesAccepted?: number;
+    pagesRejected?: number;
     finalCoverage: EvidenceCoverageAssessment;
     planningRounds: number;
     stopReason: EvidenceGatherStopReason;
@@ -257,6 +259,12 @@ export function buildAuditContextPack(
     priorityMatrix: buildPriorityMatrix(input.audit.priority_matrix),
     investigation: {
       pagesInspected: input.budgetUsage.pagesInspected,
+      ...(input.budgetUsage.pagesAccepted === undefined
+        ? {}
+        : { pagesAccepted: input.budgetUsage.pagesAccepted }),
+      ...(input.budgetUsage.pagesRejected === undefined
+        ? {}
+        : { pagesRejected: input.budgetUsage.pagesRejected }),
       finalCoverage: { ...input.finalCoverage },
       planningRounds: input.planningRounds,
       stopReason: input.stopReason,
@@ -279,6 +287,11 @@ export function buildAuditContextPack(
           ? { normalization: { ...input.models.normalization } }
           : {}),
         planner: input.models.planner.map((item) => ({ ...item })),
+        ...(input.models.admission
+          ? {
+              admission: input.models.admission.map((item) => ({ ...item })),
+            }
+          : {}),
         ...(input.models.grader
           ? { grader: { ...input.models.grader } }
           : {}),
