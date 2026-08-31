@@ -11,10 +11,25 @@ import { WorkspaceTopBar } from "./WorkspaceTopBar";
 import { ContextualPanel } from "./ContextualPanel";
 import { readInvestigateStream } from "./sse";
 import type { AuditSummary, RecentInvestigation, WorkspaceMessage, WorkspacePhase } from "./types";
-import { conversationalAuditSummary } from "./investigationPresentation";
+import { conversationalAuditSummary, successfulEvidenceSources } from "./investigationPresentation";
 import type { PublicAuditQaMetadata } from "@/lib/conversation/auditAnswer";
 import type { HumanAuditUsageState } from "@/lib/humanAuditUsageContract";
 import { HumanAuditPaywallDialog } from "./HumanAuditPaywallDialog";
+import {
+  conversationModeForRequest,
+  conversationTimeoutForMode,
+  runPendingRequest,
+  type ConversationRequestMode,
+} from "./workspaceRequestState";
+import {
+  INITIAL_HUMAN_AUDIT_USAGE_STATE,
+  loadHumanAuditUsage,
+  readyHumanAuditUsage,
+} from "./humanAuditUsageState";
+import {
+  hydrateRecentCanonicalFacts,
+  scoreFreePillars,
+} from "./recentCanonicalFacts";
 
 const RECENTS_KEY = "verdict_recent_investigations";
 
@@ -33,16 +48,22 @@ function extractDomain(rawUrl: string): string {
 }
 
 function compactRecentResult(result: AuditSummary): AuditSummary {
-  const {
-    evidence: _evidence,
-    evidenceCoverage: _evidenceCoverage,
-    finalCoverage: _finalCoverage,
-    budgetUsage: _budgetUsage,
-    investigation: _investigation,
-    stopReason: _stopReason,
-    ...compact
-  } = result;
-  return compact;
+  return {
+    reportId: result.reportId,
+    overallScore: result.overallScore,
+    canonicalReportFacts: result.canonicalReportFacts,
+    identity: result.identity,
+    pagesInspected: result.pagesInspected ?? successfulEvidenceSources(result.evidence).length,
+    evidence: result.evidence,
+    finalCoverage: result.finalCoverage,
+    stopReason: result.stopReason,
+    investigation: result.investigation,
+    company_name: result.company_name,
+    score_interpretation: result.score_interpretation,
+    the_verdict: result.the_verdict,
+    priority_matrix: result.priority_matrix,
+    pillars: scoreFreePillars(result.pillars),
+  };
 }
 
 export function VerdictWorkspace() {
@@ -54,6 +75,8 @@ export function VerdictWorkspace() {
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const [hasCompletedAudit, setHasCompletedAudit] = useState(false);
   const [conversing, setConversing] = useState(false);
+  const [conversingMode, setConversingMode] =
+    useState<ConversationRequestMode>("thinking");
   const [activeReportId, setActiveReportId] = useState<string | undefined>();
   const [activeUrl, setActiveUrl] = useState<string | undefined>();
   const [activeDomain, setActiveDomain] = useState<string | undefined>();
@@ -61,8 +84,10 @@ export function VerdictWorkspace() {
   const [activeScore, setActiveScore] = useState<number | undefined>();
   const [activeResult, setActiveResult] = useState<AuditSummary | undefined>();
   const [startTime, setStartTime] = useState<number | null>(null);
-  const [humanAuditUsage, setHumanAuditUsage] =
-    useState<HumanAuditUsageState | null>(null);
+  const [humanAuditUsageState, setHumanAuditUsageState] = useState(
+    INITIAL_HUMAN_AUDIT_USAGE_STATE
+  );
+  const humanAuditUsage = humanAuditUsageState.usage;
   const [pendingAuditUrl, setPendingAuditUrl] = useState<string | null>(null);
 
   // Layout states
@@ -77,9 +102,18 @@ export function VerdictWorkspace() {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const liveEventsRef = useRef<ActivityEvent[]>([]);
   const inFlightRef = useRef(false);
+  const recentSelectionRef = useRef(0);
 
   const investigating = phase === "investigating";
   const busy = investigating || conversing;
+
+  const applyHumanAuditUsage = (usage: HumanAuditUsageState) => {
+    setHumanAuditUsageState(readyHumanAuditUsage(usage));
+  };
+
+  const refreshHumanAuditUsage = () => {
+    void loadHumanAuditUsage().then(setHumanAuditUsageState);
+  };
 
   // Load recents on mount
   useEffect(() => {
@@ -102,15 +136,9 @@ export function VerdictWorkspace() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/usage", { method: "GET" })
-      .then(async (response) => {
-        if (!response.ok) return null;
-        return (await response.json()) as HumanAuditUsageState;
-      })
-      .then((usage) => {
-        if (!cancelled && usage) setHumanAuditUsage(usage);
-      })
-      .catch(() => undefined);
+    void loadHumanAuditUsage().then((state) => {
+      if (!cancelled) setHumanAuditUsageState(state);
+    });
     return () => {
       cancelled = true;
     };
@@ -165,40 +193,70 @@ export function VerdictWorkspace() {
     });
   };
 
+  const restoreRecent = (item: RecentInvestigation) => {
+    if (!item.result) return;
+
+    const result = compactRecentResult(item.result);
+
+    setRecents((current) => {
+      const updated = current.map((recent) =>
+        recent.id === item.id ? { ...item, result } : recent
+      );
+      try {
+        localStorage.setItem(RECENTS_KEY, JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+      return updated;
+    });
+
+    // Restore audit without re-running the backend investigation.
+    setDraft("");
+    setPhase("complete");
+    setActiveUrl(item.url);
+    setActiveDomain(item.domain);
+    setActiveCompany(item.companyName);
+    setActiveScore(item.score);
+    setActiveReportId(item.reportId);
+    setActiveResult(result);
+    setLiveEvents([]);
+    setActivityEvents([]);
+    liveEventsRef.current = [];
+
+    const restoredMessages: WorkspaceMessage[] = [
+      { id: nextId(), role: "user", kind: "text", content: item.url },
+      {
+        id: nextId(),
+        role: "verdict",
+        kind: "result",
+        summary:
+          item.summary ||
+          `${item.companyName} scores ${item.score}/100 on Growth Readiness. The full breakdown is in the report.`,
+        result,
+        domain: item.domain,
+      },
+    ];
+
+    setMessages(restoredMessages);
+    setIsRightPanelOpen(true);
+    setHasCompletedAudit(true);
+  };
+
   const handleSelectRecent = (item: RecentInvestigation) => {
     if (busy || inFlightRef.current) return;
 
     if (item.result) {
-      // Restore audit instantly without re-running backend investigation
-      setDraft("");
-      setPhase("complete");
-      setActiveUrl(item.url);
-      setActiveDomain(item.domain);
-      setActiveCompany(item.companyName);
-      setActiveScore(item.score);
-      setActiveReportId(item.reportId);
-      setActiveResult(item.result);
-      setLiveEvents([]);
-      setActivityEvents([]);
-      liveEventsRef.current = [];
-
-      const restoredMessages: WorkspaceMessage[] = [
-        { id: nextId(), role: "user", kind: "text", content: item.url },
-        {
-          id: nextId(),
-          role: "verdict",
-          kind: "result",
-          summary:
-            item.summary ||
-            `${item.companyName} scores ${item.score}/100 on Growth Readiness. The full breakdown is in the report.`,
-          result: item.result,
-          domain: item.domain,
-        },
-      ];
-
-      setMessages(restoredMessages);
-      setIsRightPanelOpen(true);
-      setHasCompletedAudit(true);
+      const selection = recentSelectionRef.current + 1;
+      recentSelectionRef.current = selection;
+      void hydrateRecentCanonicalFacts(item).then((hydrated) => {
+        if (
+          recentSelectionRef.current !== selection ||
+          inFlightRef.current
+        ) {
+          return;
+        }
+        restoreRecent(hydrated);
+      });
     } else {
       // Fallback only if no cached audit result
       handleSend(item.url);
@@ -206,6 +264,7 @@ export function VerdictWorkspace() {
   };
 
   const handleNewInvestigation = () => {
+    recentSelectionRef.current += 1;
     setDraft("");
     setPendingAuditUrl(null);
     setPhase("idle");
@@ -247,7 +306,9 @@ export function VerdictWorkspace() {
     setActiveResult(undefined);
     setStartTime(Date.now());
     setPhase("investigating");
-    setIsRightPanelOpen(true); // Auto-opens during active investigation
+    if (typeof window !== "undefined" && window.innerWidth >= 1280) {
+      setIsRightPanelOpen(true);
+    }
     liveEventsRef.current = [];
     setLiveEvents([]);
     setActivityEvents([]);
@@ -266,19 +327,33 @@ export function VerdictWorkspace() {
       if (response.status === 429) {
         let retryAfterSeconds: number | undefined;
         let message: string | undefined;
+        let isPaymentRequired = false;
         try {
           const payload = (await response.json()) as {
+            error?: string;
             message?: string;
             retryAfterSeconds?: number;
             usage?: HumanAuditUsageState;
           };
           retryAfterSeconds = payload.retryAfterSeconds;
           message = payload.message;
-          if (payload.usage) setHumanAuditUsage(payload.usage);
+          isPaymentRequired =
+            payload.error === "HUMAN_AUDIT_PAYMENT_REQUIRED" ||
+            Boolean(payload.usage && !payload.usage.canStartAudit);
+          if (payload.usage) applyHumanAuditUsage(payload.usage);
+          else refreshHumanAuditUsage();
         } catch {
           retryAfterSeconds = undefined;
+          refreshHumanAuditUsage();
         }
         setPhase(hasCompletedAudit ? "complete" : "idle");
+
+        if (isPaymentRequired) {
+          setPendingAuditUrl(url);
+          posthog?.capture("audit_payment_preview_opened");
+          return;
+        }
+
         reply(message || rateLimitReply(retryAfterSeconds));
         return;
       }
@@ -294,6 +369,7 @@ export function VerdictWorkspace() {
           message: payload.error || "I couldn't complete that investigation. Please check the URL and try again.",
           domain,
         });
+        refreshHumanAuditUsage();
         return;
       }
 
@@ -309,7 +385,9 @@ export function VerdictWorkspace() {
           setActiveScore(result.overallScore);
           setActiveResult(result);
           if (result.humanAuditUsage) {
-            setHumanAuditUsage(result.humanAuditUsage);
+            applyHumanAuditUsage(result.humanAuditUsage);
+          } else {
+            refreshHumanAuditUsage();
           }
 
           const traceMsg: WorkspaceMessage = {
@@ -368,6 +446,7 @@ export function VerdictWorkspace() {
             message: error || "The investigation encountered an error and could not complete.",
             domain,
           });
+          refreshHumanAuditUsage();
         },
       });
     } catch (error: unknown) {
@@ -383,12 +462,15 @@ export function VerdictWorkspace() {
         message: "The investigation stream was interrupted. Please try again.",
         domain,
       });
+      refreshHumanAuditUsage();
     }
   };
 
   const handleSend = (raw: string) => {
     const text = raw.trim();
     if (!text || busy || inFlightRef.current) return;
+
+    recentSelectionRef.current += 1;
 
     const url = extractStartupUrl(text);
     if (
@@ -419,66 +501,99 @@ export function VerdictWorkspace() {
       return;
     }
 
+    const mode = conversationModeForRequest(
+      text,
+      hasCompletedAudit && Boolean(activeResult)
+    );
+    setConversingMode(mode);
+
     posthog?.capture("conversation_message");
-    void askVerdict(nextMessages);
+    void askVerdict(nextMessages, mode);
   };
 
-  const askVerdict = async (thread: WorkspaceMessage[]) => {
+  const askVerdict = async (
+    thread: WorkspaceMessage[],
+    mode: ConversationRequestMode
+  ) => {
     inFlightRef.current = true;
     setConversing(true);
-    try {
-      const history = thread
-        .filter((message): message is Extract<WorkspaceMessage, { kind: "text" }> => message.kind === "text")
-        .slice(-10)
-        .map((message) => ({
-          role: message.role === "user" ? "user" : "assistant",
-          content: message.content,
-        }));
+    await runPendingRequest({
+      request: async () => {
+        const history = thread
+          .filter(
+            (
+              message
+            ): message is Extract<WorkspaceMessage, { kind: "text" }> =>
+              message.kind === "text"
+          )
+          .slice(-10)
+          .map((message) => ({
+            role: message.role === "user" ? "user" : "assistant",
+            content: message.content,
+          }));
 
-      const response = await fetch("/api/conversation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: history,
-          activeReportId,
-          knownAudits: recents.flatMap((item) =>
-            item.reportId
-              ? [
-                  {
-                    reportId: item.reportId,
-                    companyName: item.companyName,
-                    domain: item.domain,
-                  },
-                ]
-              : []
-          ),
-        }),
-      });
+        const response = await fetch("/api/conversation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(conversationTimeoutForMode(mode)),
+          body: JSON.stringify({
+            messages: history,
+            activeReportId,
+            knownAudits: recents.flatMap((item) =>
+              item.reportId
+                ? [
+                    {
+                      reportId: item.reportId,
+                      companyName: item.companyName,
+                      domain: item.domain,
+                    },
+                  ]
+                : []
+            ),
+          }),
+        });
 
-      const payload = (await response.json().catch(() => null)) as {
-        action?: string;
-        message?: string;
-        url?: string | null;
-        auditQa?: PublicAuditQaMetadata;
-        usage?: HumanAuditUsageState;
-      } | null;
+        const payload = (await response.json().catch(() => null)) as {
+          action?: string;
+          message?: string;
+          url?: string | null;
+          auditQa?: PublicAuditQaMetadata;
+          usage?: HumanAuditUsageState;
+        } | null;
 
-      if (payload?.usage) setHumanAuditUsage(payload.usage);
+        if (payload?.usage) applyHumanAuditUsage(payload.usage);
 
-      if (payload?.action === "start_audit" && payload.url) {
-        posthog?.capture("audit_intent", { source: "conversation" });
-        if (payload.message) reply(payload.message);
-        await runInvestigation(payload.url);
-        return;
-      }
+        return payload;
+      },
+      onSuccess: async (payload) => {
+        if (payload?.action === "start_audit" && payload.url) {
+          posthog?.capture("audit_intent", { source: "conversation" });
+          if (payload.message) reply(payload.message);
+          await runInvestigation(payload.url);
+          return;
+        }
 
-      reply(payload?.message || FALLBACK_REPLY, payload?.auditQa);
-    } catch {
-      reply(FALLBACK_REPLY);
-    } finally {
-      setConversing(false);
-      inFlightRef.current = false;
-    }
+        if (
+          payload?.action === "payment_required" &&
+          payload.url &&
+          payload.usage &&
+          !payload.usage.canStartAudit
+        ) {
+          setPendingAuditUrl(payload.url);
+          posthog?.capture("audit_payment_preview_opened");
+          return;
+        }
+
+        reply(payload?.message || FALLBACK_REPLY, payload?.auditQa);
+      },
+      onError: () => {
+        reply(FALLBACK_REPLY);
+      },
+      onSettled: () => {
+        setConversing(false);
+        inFlightRef.current = false;
+      },
+    });
   };
 
   const idle = messages.length === 0 && !busy;
@@ -497,6 +612,7 @@ export function VerdictWorkspace() {
         isMobileOpen={isMobileSidebarOpen}
         onMobileClose={() => setIsMobileSidebarOpen(false)}
         humanAuditUsage={humanAuditUsage}
+        humanAuditUsageStatus={humanAuditUsageState.status}
       />
 
       {/* 2. Center Workspace */}
@@ -518,26 +634,26 @@ export function VerdictWorkspace() {
         {/* Workspace Content */}
         <div className="relative flex min-h-0 flex-1 flex-col">
           {idle ? (
-            /* Idle Screen: Focused, Software waiting for work */
-            <div className="flex flex-1 flex-col items-center justify-center px-4 pb-12 pt-6">
+            /* Idle Screen: Properly centered in workspace */
+            <div className="flex flex-1 flex-col items-center justify-center px-4 py-12">
               <div className="w-full max-w-xl text-center">
                 <div className="mx-auto flex items-center justify-center">
-                  <VerdictLogo className="size-9 text-orange-500" />
+                  <VerdictLogo className="size-8 text-orange-500" />
                 </div>
-                <h1 className="mt-5 text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white">
-                  What startup are we auditing today?
+                <h1 className="mt-4 text-3xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-4xl">
+                  Audit a startup&apos;s growth readiness
                 </h1>
-                <p className="mx-auto mt-3 max-w-md text-[14.5px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  Paste any startup URL to run a 60-second growth due diligence audit across 7 pillars.
+                <p className="mx-auto mt-2.5 max-w-lg text-[15px] leading-relaxed text-slate-600 dark:text-slate-400">
+                  Verdict investigates public pages across 7 growth dimensions to produce an evidence-backed audit.
                 </p>
 
-                <div className="mt-7 text-left">
+                <div className="mt-6 text-left">
                   <Composer
                     value={draft}
                     onChange={setDraft}
                     onSubmit={() => handleSend(draft)}
                     investigating={busy}
-                    placeholder="Enter a startup URL (e.g. linear.app, stripe.com) or ask anything..."
+                    placeholder="Enter a startup URL (e.g. linear.app, resend.com)…"
                   />
                 </div>
               </div>
@@ -552,6 +668,7 @@ export function VerdictWorkspace() {
                     liveEvents={liveEvents}
                     investigating={investigating}
                     pendingReply={conversing}
+                    pendingReplyMode={conversingMode}
                     activeDomain={activeDomain}
                     startTime={startTime}
                     onOpenRightPanel={() => {
@@ -576,10 +693,12 @@ export function VerdictWorkspace() {
                     targetDomain={activeDomain}
                     placeholder={
                       investigating
-                        ? "Investigation in progress..."
+                        ? "Investigation in progress…"
                         : conversing
-                          ? "Verdict is responding..."
-                          : "Ask Verdict or paste another URL..."
+                          ? conversingMode === "followup"
+                            ? "Verdict is reviewing evidence…"
+                            : "Thinking…"
+                          : "Ask Verdict a question about this audit…"
                     }
                   />
                 </div>
@@ -607,12 +726,31 @@ export function VerdictWorkspace() {
         <HumanAuditPaywallDialog
           usage={humanAuditUsage}
           auditUrl={pendingAuditUrl}
-          onUsage={setHumanAuditUsage}
+          onUsage={applyHumanAuditUsage}
           onClose={() => setPendingAuditUrl(null)}
           onRunAudit={() => {
             const url = pendingAuditUrl;
             setPendingAuditUrl(null);
-            handleSend(url);
+            if (!url) return;
+            setMessages((current) => {
+              if (
+                current.at(-1)?.role === "user" &&
+                current.at(-1)?.kind === "text" &&
+                (current.at(-1) as { content: string }).content === url
+              ) {
+                return current;
+              }
+              return [
+                ...current,
+                {
+                  id: nextId(),
+                  role: "user",
+                  kind: "text",
+                  content: url,
+                },
+              ];
+            });
+            void runInvestigation(url);
           }}
         />
       ) : null}

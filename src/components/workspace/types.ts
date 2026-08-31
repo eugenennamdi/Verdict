@@ -1,5 +1,6 @@
 import type { ActivityEvent } from "@/lib/audit/events";
 import type {
+  EvidenceCategory,
   EvidenceCoverage,
   EvidenceCoverageAssessment,
   EvidencePageSummary,
@@ -9,16 +10,20 @@ import type { EvidenceGatherStopReason } from "@/lib/audit/gather";
 import type { PublicAuditQaMetadata } from "@/lib/conversation/auditAnswer";
 import type { HumanAuditQuotaState } from "@/lib/humanAuditQuotaContract";
 import type { HumanAuditUsageState } from "@/lib/humanAuditUsageContract";
+import type { CanonicalReportProjection } from "@/lib/audit/canonicalReport";
 
 export type PillarScore = {
   score?: number;
   confidence?: string;
   reason?: string;
+  strengths?: string[];
+  weaknesses?: string[];
 };
 
 export type AuditSummary = {
   reportId?: string;
   overallScore: number;
+  canonicalReportFacts?: CanonicalReportProjection;
   identity: {
     company_name: string;
     inferred_description?: string;
@@ -29,10 +34,30 @@ export type AuditSummary = {
   evidenceCoverage?: EvidenceCoverage;
   finalCoverage?: EvidenceCoverageAssessment;
   pagesInspected?: number;
+  pagesAccepted?: number;
+  audit_context?: {
+    sources?: Array<{
+      sourceId?: string;
+      url: string;
+      path?: string;
+      role?: "homepage" | "supporting";
+      category?: EvidenceCategory;
+    }>;
+  };
+  auditContext?: {
+    sources?: Array<{
+      sourceId?: string;
+      url: string;
+      path?: string;
+      role?: "homepage" | "supporting";
+      category?: EvidenceCategory;
+    }>;
+  };
   budgetUsage?: EvidenceBudgetUsage;
   stopReason?: EvidenceGatherStopReason;
   investigation?: {
     candidatesDiscovered: number;
+    candidatesRetained?: number;
     planningRounds: number;
     pageAttempts: number;
     stopReason: EvidenceGatherStopReason;
@@ -77,4 +102,4 @@ export type WorkspaceMessage =
   | { id: string; role: "verdict"; kind: "result"; summary: string; result: AuditSummary; domain?: string }
   | { id: string; role: "verdict"; kind: "error"; message: string; domain?: string };
 
-export type WorkspacePhase = "idle" | "investigating" | "complete";
+export type WorkspacePhase = "idle" | "investigating" | "complete" | "failed";

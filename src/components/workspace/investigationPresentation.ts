@@ -48,26 +48,22 @@ function categoryLabel(value: unknown): string | undefined {
 
 export function presentActivityEvent(
   event: ActivityEvent
-): InvestigationActivityRow {
+): InvestigationActivityRow | undefined {
   const data = event.data ?? {};
   switch (event.type) {
     case "audit.started":
       return { type: event.type, label: "Investigation started", tone: "active" };
-    case "site.homepage_acquired":
+    case "site.homepage_acquired": {
+      const path = pathFromUrl(data.url);
       return {
         type: event.type,
         label: "Homepage acquired",
-        detail: pathFromUrl(data.url),
-        tone: "complete",
-      };
-    case "site.pages_discovered": {
-      const count = asNumber(data.count) ?? 0;
-      return {
-        type: event.type,
-        label: `${count} relevant page${count === 1 ? "" : "s"} discovered`,
+        detail: path && path !== "/" ? path : undefined,
         tone: "complete",
       };
     }
+    case "site.pages_discovered":
+      return undefined;
     case "evidence.insufficient": {
       const categories = Array.isArray(data.categories)
         ? data.categories.map(categoryLabel).filter(Boolean).join(" and ")
@@ -78,20 +74,24 @@ export function presentActivityEvent(
         tone: "warning",
       };
     }
-    case "evidence.selected":
+    case "evidence.selected": {
+      const path = pathFromUrl(data.url);
       return {
         type: event.type,
-        label: `Inspecting ${pathFromUrl(data.url) ?? "selected page"}`,
+        label: `Inspecting ${path && path !== "/" ? path : "selected page"}`,
         detail: categoryLabel(data.category),
         tone: "active",
       };
-    case "evidence.acquired":
+    }
+    case "evidence.acquired": {
+      const path = pathFromUrl(data.url);
       return {
         type: event.type,
         label: `${categoryLabel(data.category) ?? "Supporting"} evidence collected`,
-        detail: pathFromUrl(data.url),
+        detail: path && path !== "/" ? path : undefined,
         tone: "complete",
       };
+    }
     case "evidence.sufficient":
       return {
         type: event.type,
@@ -119,7 +119,16 @@ export function presentActivityEvent(
 export function presentActivityEvents(
   events: ActivityEvent[]
 ): InvestigationActivityRow[] {
-  return events.map(presentActivityEvent);
+  return events.map(presentActivityEvent).filter(Boolean) as InvestigationActivityRow[];
+}
+
+export function isAdmissionAwareAudit(result: AuditSummary | undefined): boolean {
+  if (!result) return false;
+  if (result.audit_context !== undefined || result.auditContext !== undefined) return true;
+  if (typeof result.pagesAccepted === "number") return true;
+  if (typeof result.evidenceCoverage?.pagesAccepted === "number") return true;
+  if (typeof result.investigation?.candidatesRetained === "number") return true;
+  return false;
 }
 
 export function successfulEvidenceSources(
@@ -137,6 +146,43 @@ export function successfulEvidenceSources(
         ...(page.category ? { category: page.category } : {}),
       };
     });
+}
+
+export function acceptedEvidenceSources(
+  auditResult: AuditSummary | undefined,
+  events: ActivityEvent[] = []
+): EvidenceSource[] {
+  if (!auditResult) {
+    return evidenceSourcesFromEvents(events);
+  }
+
+  // 1. Current / admission-aware audit: strictly use canonical audit_context.sources
+  if (isAdmissionAwareAudit(auditResult)) {
+    const contextSources =
+      auditResult.audit_context?.sources ?? auditResult.auditContext?.sources;
+    if (!Array.isArray(contextSources) || contextSources.length === 0) {
+      // In an admission-aware audit, if canonical sources are absent, fail gracefully without re-interpreting all acquired pages as accepted
+      return [];
+    }
+    const seen = new Set<string>();
+    const sources: EvidenceSource[] = [];
+    for (const source of contextSources) {
+      if (!source.url || seen.has(source.url)) continue;
+      seen.add(source.url);
+      sources.push({
+        url: source.url,
+        path: source.path || pathFromUrl(source.url) || "/",
+        role: source.role || (source.path === "/" ? "homepage" : "supporting"),
+        ...(source.category ? { category: source.category } : {}),
+      });
+    }
+    return sources;
+  }
+
+  // 2. Genuine legacy audit: pre-dates evidence admission, fallback to acquired pages
+  const persisted = successfulEvidenceSources(auditResult.evidence);
+  if (persisted.length > 0) return persisted;
+  return evidenceSourcesFromEvents(events);
 }
 
 export function evidenceSourcesFromEvents(
@@ -164,7 +210,14 @@ export function evidenceSourcesFromEvents(
 }
 
 export function inspectedPageCount(result: AuditSummary): number {
-  return result.pagesInspected ?? successfulEvidenceSources(result.evidence).length;
+  // The canonical numeric field is authoritative for inspected count —
+  // do not infer from accepted evidence sources (those are a distinct concept)
+  if (typeof result.pagesInspected === "number" && result.pagesInspected > 0) {
+    return result.pagesInspected;
+  }
+  const sources = acceptedEvidenceSources(result);
+  if (sources.length > 0) return sources.length;
+  return 0;
 }
 
 export function inspectedPageCountFromEvents(events: ActivityEvent[]): number {
@@ -229,12 +282,12 @@ export function latestCoverageFromEvents(
 }
 
 const STOP_REASON_LABELS: Record<EvidenceGatherStopReason, string> = {
-  sufficient: "Evidence coverage reached",
+  sufficient: "Evidence coverage sufficient",
   page_budget: "Page limit reached",
   planning_round_budget: "Planning round limit reached",
   character_budget: "Evidence size limit reached",
   gather_timeout: "Investigation time limit reached",
-  discovery_failed: "Page discovery unavailable; homepage audit completed",
+  discovery_failed: "Page discovery unavailable",
   no_candidates: "No additional useful pages found",
   no_selection: "No valid additional page selected",
 };

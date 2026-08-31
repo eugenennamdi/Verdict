@@ -5,7 +5,10 @@ vi.mock("server-only", () => ({}));
 import { VERDICT_AUDIT_SCHEMA } from "@/lib/engine";
 import { AUDIT_QA_SCHEMA } from "@/lib/conversation/auditQa";
 import { computeOverallScore } from "./score";
-import { parseAndValidateStructuredOutput } from "./structuredOutput";
+import {
+  isNearCompleteGraderOutput,
+  parseAndValidateStructuredOutput,
+} from "./structuredOutput";
 
 const pillar = {
   score: 70,
@@ -123,5 +126,38 @@ describe("canonical structured model output validation", () => {
       category: "malformed_json",
       telemetry: {},
     }));
+  });
+
+  it("recovers a complete fenced object with trailing commas without changing values", () => {
+    const audit = validAudit();
+    const malformed = `Here is the JSON:\n\`\`\`json\n${JSON.stringify(audit).replace(
+      /}\s*$/,
+      ",}"
+    )}\n\`\`\``;
+
+    expect(
+      parseAndValidateStructuredOutput({
+        task: "grader",
+        text: malformed,
+        schema: VERDICT_AUDIT_SCHEMA,
+      })
+    ).toEqual(audit);
+  });
+
+  it("never treats a truncated grader response as valid recovery", () => {
+    const truncated = JSON.stringify(validAudit()).slice(0, -80);
+    expect(() =>
+      parseAndValidateStructuredOutput({
+        task: "grader",
+        text: truncated,
+        schema: VERDICT_AUDIT_SCHEMA,
+      })
+    ).toThrowError(expect.objectContaining({ category: "malformed_json" }));
+  });
+
+  it("offers correction only for near-complete grader output", () => {
+    const completeButMalformed = `${JSON.stringify(validAudit()).slice(0, -1)},`;
+    expect(isNearCompleteGraderOutput(completeButMalformed)).toBe(true);
+    expect(isNearCompleteGraderOutput('{"pillars":{')).toBe(false);
   });
 });

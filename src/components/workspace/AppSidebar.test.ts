@@ -63,6 +63,9 @@ describe("workspace sidebar quota placement", () => {
     );
     expect(workspaceSource).toContain("<AppSidebar");
     expect(workspaceSource).toContain("humanAuditUsage={humanAuditUsage}");
+    expect(workspaceSource).toContain(
+      "humanAuditUsageStatus={humanAuditUsageState.status}"
+    );
     expect(workspaceSource).toContain("<HumanAuditPaywallDialog");
     expect(workspaceSource).toContain("humanAuditUsage?.free.remaining === 0");
     expect(workspaceSource).toContain("humanAuditUsage.paid.available === 0");

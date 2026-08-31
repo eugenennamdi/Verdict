@@ -1,4 +1,8 @@
 import {
+  admitEvidencePages,
+  type EvidenceAdmissionInput,
+} from "@/lib/audit/admission";
+import {
   acquireEvidencePage,
   type AcquireEvidencePageInput,
 } from "@/lib/audit/acquire";
@@ -9,6 +13,7 @@ import {
 import {
   assessEvidenceCoverage,
   createEvidencePage,
+  isAcceptedEvidencePage,
   isEvidenceCoverageSufficient,
   resolveAuditBudget,
   type AuditBudget,
@@ -18,7 +23,7 @@ import {
 } from "@/lib/audit/evidence";
 import type { Tracer } from "@/lib/audit/events";
 import type { AuditModelObserver } from "@/lib/audit/model";
-import { orderedSuccessfulEvidencePages } from "@/lib/audit/source";
+import { buildGraderEvidencePack } from "@/lib/audit/source";
 import {
   deterministicEvidencePlan,
   planEvidence,
@@ -41,6 +46,7 @@ export type EvidenceGatherResult = {
   pages: EvidencePage[];
   coverage: EvidenceCoverageAssessment;
   candidatesDiscovered: number;
+  candidatesRetained: number;
   planningRounds: number;
   pageAttempts: number;
   stopReason: EvidenceGatherStopReason;
@@ -53,6 +59,11 @@ export type EvidenceGatherServices = {
     options?: { onModelResult?: AuditModelObserver }
   ) => Promise<EvidencePlan>;
   acquire: (input: AcquireEvidencePageInput) => Promise<EvidencePage>;
+  admit: (
+    input: EvidenceAdmissionInput,
+    timeoutMs: number,
+    onModelResult?: AuditModelObserver
+  ) => Promise<EvidencePage[]>;
   now: () => number;
 };
 
@@ -79,6 +90,8 @@ const DEFAULT_SERVICES: EvidenceGatherServices = {
     discoverInternalPages(rootUrl, { timeoutMs }),
   plan: (input, options) => planEvidence(input, options),
   acquire: (input) => acquireEvidencePage(input),
+  admit: (input, timeoutMs, onModelResult) =>
+    admitEvidencePages(input, { timeoutMs, onModelResult }),
   now: () => Date.now(),
 };
 
@@ -123,7 +136,7 @@ async function withinGatherTime<T>(
 function totalEvidenceChars(pages: EvidencePage[]): number {
   return pages.reduce(
     (total, page) =>
-      page.status === "acquired" ? total + page.chars : total,
+      isAcceptedEvidencePage(page) ? total + page.chars : total,
     0
   );
 }
@@ -139,6 +152,7 @@ function finish(
     pages,
     coverage: assessEvidenceCoverage(pages),
     candidatesDiscovered,
+    candidatesRetained: candidatesDiscovered,
     planningRounds,
     pageAttempts,
     stopReason,
@@ -181,9 +195,11 @@ export async function gatherAuditEvidence(
   if (candidates.length > 0) {
     input.tracer.emit(
       "site.pages_discovered",
-      `${candidates.length} relevant page${candidates.length === 1 ? "" : "s"} discovered`,
+      `${candidates.length} candidate URL${candidates.length === 1 ? "" : "s"} retained`,
       {
         count: candidates.length,
+        candidatesRetained: candidates.length,
+        countSemantics: "retained_candidate_urls",
         sample: candidates.slice(0, 3).map((candidate) => candidate.url),
       }
     );
@@ -351,9 +367,15 @@ export async function gatherAuditEvidence(
       );
     }
 
+    const acquiredThisRound: EvidencePage[] = [];
+    let roundTimedOut = false;
     for (const selection of selections) {
       if (pageAttempts >= budget.maxPagesTotal) break;
-      const currentChars = totalEvidenceChars(pages);
+      const pendingChars = acquiredThisRound.reduce(
+        (total, page) => total + page.chars,
+        0
+      );
+      const currentChars = totalEvidenceChars(pages) + pendingChars;
       if (currentChars >= budget.maxEvidenceChars) break;
 
       const acquisitionTimeRemaining = remainingGatherTime(
@@ -437,21 +459,77 @@ export async function gatherAuditEvidence(
         });
       }
 
-      pages.push(page);
-      if (page.status === "acquired") {
+      if (page.status === "acquired") acquiredThisRound.push(page);
+      else pages.push(page);
+
+      if (
+        page.error === "Evidence gathering timed out" ||
+        remainingGatherTime(budget, startedAt, services.now) <= 0
+      ) {
+        roundTimedOut = true;
+        break;
+      }
+    }
+
+    if (acquiredThisRound.length > 0) {
+      const admissionTimeRemaining = remainingGatherTime(
+        budget,
+        startedAt,
+        services.now
+      );
+      let admitted: EvidencePage[];
+      if (admissionTimeRemaining <= 0) {
+        admitted = acquiredThisRound.map((page) => ({
+          ...page,
+          admission: {
+            status: "rejected_irrelevant" as const,
+            method: "fail_closed" as const,
+            reasonCode: "relevance_unverified" as const,
+          },
+        }));
+      } else {
+        try {
+          admitted = await withinGatherTime(
+            services.admit(
+              {
+                rootUrl: input.rootUrl,
+                identity: input.identity,
+                pages: acquiredThisRound,
+              },
+              admissionTimeRemaining,
+              input.onModelResult
+            ),
+            admissionTimeRemaining
+          );
+        } catch {
+          admitted = acquiredThisRound.map((page) => ({
+            ...page,
+            admission: {
+              status: "rejected_irrelevant" as const,
+              method: "fail_closed" as const,
+              reasonCode: "relevance_unverified" as const,
+            },
+          }));
+        }
+      }
+
+      pages.push(...admitted);
+      for (const page of admitted) {
+        if (!isAcceptedEvidencePage(page)) continue;
         input.tracer.emit(
           "evidence.acquired",
-          `${categoryLabel(selection.category)} evidence collected`,
+          `${categoryLabel(page.category!)} evidence collected`,
           {
             url: page.url,
-            category: selection.category,
+            category: page.category,
             chars: page.chars,
           }
         );
       }
 
       if (
-        page.error === "Evidence gathering timed out" ||
+        roundTimedOut ||
+        admissionTimeRemaining <= 0 ||
         remainingGatherTime(budget, startedAt, services.now) <= 0
       ) {
         return finish(
@@ -463,6 +541,16 @@ export async function gatherAuditEvidence(
         );
       }
     }
+
+    if (roundTimedOut) {
+      return finish(
+        pages,
+        candidates.length,
+        planningRounds,
+        pageAttempts,
+        "gather_timeout"
+      );
+    }
   }
 }
 
@@ -470,27 +558,5 @@ export function combineEvidenceForGrading(
   pages: EvidencePage[],
   budgetOverrides: Partial<AuditBudget> = {}
 ): string {
-  const budget = resolveAuditBudget(budgetOverrides);
-  const acquired = orderedSuccessfulEvidencePages(pages);
-  let combined = "";
-
-  acquired.forEach((page, index) => {
-    if (combined.length >= budget.maxEvidenceChars) return;
-    const sourceId = `S${index + 1}`;
-    const block = [
-      `--- UNTRUSTED WEBSITE EVIDENCE ${sourceId} ---`,
-      `Source ID: ${sourceId}`,
-      `Source: ${page.url}`,
-      `Path: ${page.path}`,
-      `Category: ${page.category ?? "unclassified"}`,
-      "",
-      page.markdown,
-      `--- END UNTRUSTED WEBSITE EVIDENCE ${sourceId} ---`,
-      "",
-    ].join("\n");
-    const remaining = budget.maxEvidenceChars - combined.length;
-    combined += block.slice(0, remaining);
-  });
-
-  return combined;
+  return buildGraderEvidencePack(pages, budgetOverrides).markdown;
 }

@@ -77,35 +77,50 @@ describe("exhausted-quota payment preview", () => {
 
   it("explains the audit price and asks a disconnected visitor to connect", () => {
     const html = renderDialog();
-    expect(html).toContain("Your free audits are used");
-    expect(html).toContain("$0.50 USDC");
+    expect(html).toContain("You&#x27;ve used your free audits");
+    expect(html).toContain("0.5 USDC");
+    expect(html).toContain("Connect your wallet to continue.");
     expect(html).toContain("Connect Wallet");
-    expect(html).toContain("example.com");
+    expect(html).toContain("Target URL");
+    expect(html).toContain("https://example.com/pricing");
     expect(html).not.toContain("Continue · $0.50");
   });
 
-  it("shows a network switch before payment when needed", () => {
+  it("shows a network switch before payment when needed without telling connected user to connect", () => {
     walletState.account = {
       address: "0x727e00000000000000000000000000000000f3B8",
       chainId: 1,
       isConnected: true,
     };
     walletState.walletClient = {};
-    expect(renderDialog()).toContain("Switch to Base Sepolia");
+    const html = renderDialog();
+    expect(html).toContain("Switch to Base Sepolia");
+    expect(html).toContain("Switch your wallet to Base Sepolia to complete the 0.5 USDC payment.");
+    expect(html).not.toContain("Connect your wallet to continue.");
   });
 
-  it("shows the explicit payment action only on the configured network", () => {
+  it("shows the payment action and payment copy when wallet is connected on the configured network", () => {
     walletState.account = {
       address: "0x727e00000000000000000000000000000000f3B8",
       chainId: 84532,
       isConnected: true,
     };
     walletState.walletClient = {};
-    expect(renderDialog()).toContain("Pay $0.50 USDC");
+    const html = renderDialog();
+    expect(html).toContain("Pay 0.5 USDC");
+    expect(html).toContain("Run another audit for 0.5 USDC on Base Sepolia.");
+    expect(html).not.toContain("Connect your wallet to continue.");
+    expect(html).not.toContain("One autonomous growth investigation");
+    expect(html).toContain("Base Sepolia");
+    expect(html).not.toContain("Base Sepolia / testnet");
   });
 
-  it("runs the audit instead of offering another payment when entitlement exists", () => {
-    expect(renderDialog(usage(1))).toContain("Run Audit");
+  it("runs the audit and shows Payment Confirmed with checkmark instead of offering another payment when entitlement exists", () => {
+    const html = renderDialog(usage(1));
+    expect(html).toContain("Run Audit");
+    expect(html).toContain("Payment Confirmed");
+    expect(html).not.toContain("Your payment is confirmed. You can now start the investigation.");
+    expect(html).not.toContain("Connect your wallet to continue.");
     expect(paywallAction(0, false, false)).toBe("connect");
     expect(paywallAction(0, true, false)).toBe("switch");
     expect(paywallAction(0, true, true)).toBe("pay");

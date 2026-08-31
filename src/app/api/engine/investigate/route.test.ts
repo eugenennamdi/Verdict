@@ -9,7 +9,10 @@ import {
   ModelProviderExhaustedError,
   TerminalModelProviderError,
 } from "@/lib/audit/model";
-import { MODEL_TEMPORARILY_UNAVAILABLE_MESSAGE } from "@/lib/audit/publicError";
+import {
+  GENERIC_INVESTIGATION_ERROR_MESSAGE,
+  MODEL_TEMPORARILY_UNAVAILABLE_MESSAGE,
+} from "@/lib/audit/publicError";
 
 const AVAILABLE = {
   allowed: true as const,
@@ -211,10 +214,16 @@ describe("POST /api/engine/investigate human quota", () => {
   });
 
   it("releases free access and hides exhausted or terminal provider failures", async () => {
-    for (const failure of [
-      new ModelProviderExhaustedError("invalid_structured_output"),
-      new TerminalModelProviderError("invalid_request"),
-    ]) {
+    for (const [failure, expectedMessage] of [
+      [
+        new ModelProviderExhaustedError("invalid_structured_output"),
+        MODEL_TEMPORARILY_UNAVAILABLE_MESSAGE,
+      ],
+      [
+        new TerminalModelProviderError("invalid_request"),
+        GENERIC_INVESTIGATION_ERROR_MESSAGE,
+      ],
+    ] as const) {
       const dependencies = baseDependencies();
       const handler = createInvestigateHandler({
         ...dependencies,
@@ -232,9 +241,36 @@ describe("POST /api/engine/investigate human quota", () => {
         AVAILABLE.access
       );
       expect(AVAILABLE.usage.free).toMatchObject({ used: 0, remaining: 2 });
-      expect(body).toContain(MODEL_TEMPORARILY_UNAVAILABLE_MESSAGE);
+      expect(body).toContain(expectedMessage);
       expect(body).not.toMatch(/MODEL_PROVIDER|invalid_structured|deepseek|gemini/i);
     }
+  });
+
+  it("releases access and strips a raw JSON provider error from the SSE frame", async () => {
+    const dependencies = baseDependencies();
+    const rawProviderError = Object.assign(
+      new Error(
+        '{"error":{"code":400,"message":"Manually set deadline 8s is too short. Minimum allowed deadline is 10s.","status":"INVALID_ARGUMENT"}}'
+      ),
+      { name: "ApiError", status: 400 }
+    );
+    const handler = createInvestigateHandler({
+      ...dependencies,
+      runAudit: vi.fn(async () => {
+        throw rawProviderError;
+      }) as never,
+    });
+
+    const response = await handler(request({ url: "https://example.com" }));
+    const body = await response.text();
+
+    expect(dependencies.completeAccess).not.toHaveBeenCalled();
+    expect(dependencies.releaseAccess).toHaveBeenCalledWith(
+      "visitor-hash",
+      AVAILABLE.access
+    );
+    expect(body).toContain(GENERIC_INVESTIGATION_ERROR_MESSAGE);
+    expect(body).not.toMatch(/deadline|INVALID_ARGUMENT|ApiError|400|10s/i);
   });
 
   it("releases a paid entitlement reservation when all model tiers fail", async () => {

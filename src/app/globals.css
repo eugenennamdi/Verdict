@@ -60,7 +60,21 @@
   }
 }
 
+@keyframes pixel-on {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 0.95; }
+}
+
+@keyframes shimmer-text {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
 :root {
+  --ink: #0f172a;
+  --ink-2: #475569;
+  --ink-3: #94a3b8;
+  --ink-4: #cbd5e1;
   --background: #f8fafc;
   --foreground: oklch(0.145 0 0);
   --card: #ffffff;
@@ -96,6 +110,10 @@
 }
 
 .dark {
+  --ink: #f8fafc;
+  --ink-2: #94a3b8;
+  --ink-3: #64748b;
+  --ink-4: #334155;
   --background: #020617;
   --foreground: oklch(0.985 0 0);
   --card: #0f172a;
@@ -151,15 +169,6 @@
 }
 
 @layer utilities {
-  .bg-mesh {
-    background-image: 
-      radial-gradient(ellipse at 40% 0%, hsla(28,100%,60%,0.2) 0%, transparent 70%),
-      radial-gradient(ellipse at 80% 10%, hsla(189,100%,56%,0.15) 0%, transparent 60%),
-      radial-gradient(ellipse at 0% 40%, hsla(355,100%,70%,0.15) 0%, transparent 70%),
-      radial-gradient(ellipse at 60% 60%, hsla(45,100%,60%,0.1) 0%, transparent 60%);
-    z-index: -1;
-  }
-
   .glass-panel {
     @apply bg-white/80 dark:bg-slate-900/40 backdrop-blur-sm border border-slate-200 dark:border-slate-800/30;
   }

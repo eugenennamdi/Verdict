@@ -12,7 +12,7 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
       const score = report.fdi_overall_score || 0;
       
       const title = `Verdict | ${score}/100 for ${companyName}`;
-      const description = `Read the brutal, YC-grade AI growth audit for ${companyName}. Score attested onchain via X Layer.`;
+      const description = `Read the autonomous AI growth audit and intelligence brief for ${companyName} on Verdict.`;
 
       return {
         title,
@@ -34,8 +34,8 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
 
   // Fallback metadata if report is not found
   return {
-    title: 'Verdict | AI Growth Auditor',
-    description: 'Get a brutal, YC-grade AI growth audit for your startup.',
+    title: 'Verdict | AI Growth Audit',
+    description: 'Read the autonomous AI growth audit and intelligence brief on Verdict.',
   };
 }
 

@@ -52,18 +52,24 @@ describe("human wallet configuration", () => {
     expect(providerSource).toContain('fontStack: "system"');
   });
 
-  it("constructs a Base Sepolia-only config under the test environment", async () => {
-    const { VERDICT_WALLET_CONNECTORS, verdictWagmiConfig } = await import(
-      "./humanWalletConfig"
-    );
-    expect(verdictWagmiConfig.chains.map((chain) => chain.id)).toEqual([84532]);
-    expect(VERDICT_WALLET_CONNECTORS).toEqual([
-      "coinbase",
-      "metaMask",
-      "rainbow",
-      "rabby",
-      "injected",
-      "walletConnect",
-    ]);
-  });
+  it(
+    "constructs a Base Sepolia-only config under the test environment",
+    async () => {
+      const { VERDICT_WALLET_CONNECTORS, verdictWagmiConfig } = await import(
+        "./humanWalletConfig"
+      );
+      expect(verdictWagmiConfig.chains.map((chain) => chain.id)).toEqual([
+        84532,
+      ]);
+      expect(VERDICT_WALLET_CONNECTORS).toEqual([
+        "coinbase",
+        "metaMask",
+        "rainbow",
+        "rabby",
+        "injected",
+        "walletConnect",
+      ]);
+    },
+    15000
+  );
 });

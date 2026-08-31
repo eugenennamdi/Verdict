@@ -7,6 +7,7 @@ import {
   type RunVerdictAuditResult,
 } from "@/lib/audit/runVerdictAudit";
 import { summarizeVerdictAuditResult } from "@/lib/audit/publicResult";
+import { projectCanonicalReportFacts } from "@/lib/audit/canonicalReport";
 import type { ActivityEvent } from "@/lib/audit/events";
 import {
   attachAnonymousVisitorCookie,
@@ -194,6 +195,9 @@ export function createInvestigateHandler(
             kind: "result",
             result: {
               ...summarize(result),
+              canonicalReportFacts: projectCanonicalReportFacts(
+                result.auditContext
+              ),
               humanAuditQuota: usage.free,
               humanAuditUsage: usage,
             },

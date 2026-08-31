@@ -78,6 +78,7 @@ describe("evidence page", () => {
     });
     const summary = summarizeEvidencePage(homepage);
     expect(summary).not.toHaveProperty("markdown");
+    expect(summary).not.toHaveProperty("admission");
     expect(summary.summary).toBe("homepage evidence");
     expect(summary.signals?.wordCount).toBe(2);
   });
@@ -107,6 +108,7 @@ describe("evidence page", () => {
       acquisitionMethod: "firecrawl",
       markdown: "1234",
       status: "acquired",
+      admission: { status: "accepted", method: "model" },
     });
     const failed = createEvidencePage({
       url: "https://example.com/security",
@@ -118,9 +120,35 @@ describe("evidence page", () => {
     expect(summarizeEvidenceCoverage([acquired, failed])).toEqual({
       pagesTotal: 2,
       pagesAcquired: 1,
+      pagesAccepted: 1,
+      pagesRejected: 0,
       pagesFailed: 1,
       charsTotal: 4,
+      acceptedCharsTotal: 4,
       categories: { conversion: 1 },
+    });
+  });
+
+  it("does not let relevance-rejected content contribute coverage", () => {
+    const rejected = createEvidencePage({
+      url: "https://example.com/team/unrelated",
+      role: "supporting",
+      category: "trust",
+      markdown: "Customers trust this unrelated business",
+      status: "acquired",
+      admission: {
+        status: "rejected_irrelevant",
+        method: "model",
+        reasonCode: "unrelated_entity",
+      },
+    });
+
+    expect(summarizeEvidenceCoverage([rejected])).toMatchObject({
+      pagesAcquired: 1,
+      pagesAccepted: 0,
+      pagesRejected: 1,
+      acceptedCharsTotal: 0,
+      categories: {},
     });
   });
 });

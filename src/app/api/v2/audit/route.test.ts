@@ -169,12 +169,40 @@ function mockAuditResult(): RunVerdictAuditResult {
     audit: {
       company_name: "Acme",
       score_interpretation: "Promising",
-      the_verdict: "Focus the message.",
+      the_verdict: {
+        status: "Pass",
+        primary_constraint: "Focus the message.",
+        highest_opportunity: "Clarify ICP",
+        estimated_impact: "High",
+      },
       priority_matrix: [],
-      pillars: [],
+      pillars: {
+        positioning: {
+          score: 80,
+          confidence: "High",
+          reason: "Clear market positioning.",
+          strengths: ["Strong ICP focus"],
+          weaknesses: [],
+        },
+      },
     },
     trace: [],
     evidenceTrace: {} as RunVerdictAuditResult["evidenceTrace"],
+    auditContext: {
+      sources: [
+        {
+          sourceId: "S1",
+          url: "https://example.com/",
+          path: "/",
+          role: "homepage",
+          category: "identity",
+          acquisitionMethod: "native",
+          chars: 1000,
+          keyFindings: ["Hero value proposition"],
+          relevantSignals: [],
+        },
+      ],
+    } as unknown as RunVerdictAuditResult["auditContext"],
   } as unknown as RunVerdictAuditResult;
 }
 
@@ -254,9 +282,31 @@ describe("POST /api/v2/audit", () => {
       company_name: "Acme",
       pagesInspected: 2,
       stopReason: "planner_done",
+      sources: [
+        {
+          url: "https://example.com/",
+          path: "/",
+          role: "homepage",
+          category: "identity",
+          keyFindings: ["Hero value proposition"],
+        },
+      ],
+      pillars: {
+        positioning: {
+          confidence: "High",
+          reason: "Clear market positioning.",
+          strengths: ["Strong ICP focus"],
+          weaknesses: [],
+        },
+      },
     });
+    expect(result.pillars.positioning).not.toHaveProperty("score");
     expect(result).not.toHaveProperty("trace");
     expect(result).not.toHaveProperty("evidenceTrace");
+    expect(result).not.toHaveProperty("budgetUsage");
+    expect(result).not.toHaveProperty("investigation");
+    expect(result).not.toHaveProperty("finalCoverage");
+    expect(result).not.toHaveProperty("evidence");
     expect(JSON.stringify(result)).not.toContain(SECRET_SENTINEL);
     expect(facilitator.verifyCalls).toBe(1);
     expect(facilitator.settleCalls).toBe(1);
@@ -310,10 +360,8 @@ describe("POST /api/v2/audit", () => {
     });
   });
 
-  it.each([
-    new ModelProviderExhaustedError("malformed_json"),
-    new TerminalModelProviderError("invalid_request"),
-  ])("sanitizes provider failures at the public API boundary", async (failure) => {
+  it("sanitizes exhausted provider failures as temporary unavailability", async () => {
+    const failure = new ModelProviderExhaustedError("malformed_json");
     const runAudit = vi.fn(async () => {
       throw failure;
     });
@@ -327,6 +375,27 @@ describe("POST /api/v2/audit", () => {
       error: {
         code: "AUDIT_TEMPORARILY_UNAVAILABLE",
         message: "The audit service is temporarily unavailable",
+      },
+    });
+    expect(JSON.stringify(body)).not.toMatch(
+      /MODEL_PROVIDER|invalid_request|malformed_json|gemini|deepseek/i
+    );
+  });
+
+  it("sanitizes terminal provider failures as a generic audit failure", async () => {
+    const runAudit = vi.fn(async () => {
+      throw new TerminalModelProviderError("invalid_request");
+    });
+    const response = await createAuthorizedAuditHandler({ runAudit })(
+      request({ url: "https://example.com" })
+    );
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body).toEqual({
+      error: {
+        code: "AUDIT_FAILED",
+        message: "The audit could not be completed",
       },
     });
     expect(JSON.stringify(body)).not.toMatch(

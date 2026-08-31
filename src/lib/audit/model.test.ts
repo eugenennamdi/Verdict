@@ -10,6 +10,7 @@ import {
   PRIMARY_AUDIT_MODEL,
   TransientModelProviderError,
   classifyAttemptLocalModelError,
+  classifyTerminalModelError,
   classifyTransientModelError,
   createAuditGenerationConfig,
 } from "./model";
@@ -24,6 +25,7 @@ describe("audit model contracts", () => {
     expect(AUDIT_THINKING_LEVELS).toEqual({
       normalization: ThinkingLevel.LOW,
       planner: ThinkingLevel.LOW,
+      admission: ThinkingLevel.LOW,
       grader: ThinkingLevel.MEDIUM,
       qa: ThinkingLevel.MEDIUM,
     });
@@ -88,5 +90,16 @@ describe("audit model contracts", () => {
         )
       ).toBe(category);
     }
+  });
+
+  it("classifies an invalid manual deadline as an application configuration defect", () => {
+    const error = Object.assign(
+      new Error(
+        '{"error":{"code":400,"message":"Manually set deadline 8s is too short. Minimum allowed deadline is 10s.","status":"INVALID_ARGUMENT"}}'
+      ),
+      { status: 400 }
+    );
+    expect(classifyTerminalModelError(error)).toBe("application");
+    expect(classifyTerminalModelError({ status: 400 })).toBe("invalid_request");
   });
 });

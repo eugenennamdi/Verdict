@@ -356,7 +356,10 @@ export async function fetchContext(
 
 export async function identifyFromMarkdown(
   markdownContext: string,
-  options: { onModelResult?: AuditModelObserver } = {}
+  options: {
+    deadlineAt?: number;
+    onModelResult?: AuditModelObserver;
+  } = {}
 ) {
   const prompt = `
 TASK:
@@ -376,7 +379,10 @@ ${markdownContext}
     extractSchema,
     "normalization",
     UNTRUSTED_EVIDENCE_SYSTEM_INSTRUCTION,
-    { onModelResult: options.onModelResult }
+    {
+      deadlineAt: options.deadlineAt,
+      onModelResult: options.onModelResult,
+    }
   );
 
   const resultText = aiResponse.text;
@@ -482,6 +488,7 @@ Target Audience: ${target_audience}
 
 export type GradeFromMarkdownOptions = {
   sources?: EvidenceSourceReference[];
+  deadlineAt?: number;
   onModelResult?: AuditModelObserver;
 };
 
@@ -544,7 +551,10 @@ export async function gradeFromMarkdown(
     VERDICT_AUDIT_SCHEMA,
     "grader",
     UNTRUSTED_EVIDENCE_SYSTEM_INSTRUCTION,
-    { onModelResult: options.onModelResult }
+    {
+      deadlineAt: options.deadlineAt,
+      onModelResult: options.onModelResult,
+    }
   );
 
   const resultText = aiResponse.text;

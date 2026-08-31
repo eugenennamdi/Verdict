@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAccountModal, useConnectModal } from "@rainbow-me/rainbowkit";
 import { useAccount, useSwitchChain, useWalletClient } from "wagmi";
-import { CreditCard, Loader2, WalletCards, X } from "lucide-react";
+import { Check, CreditCard, Loader2, Play, WalletCards, X } from "lucide-react";
 import {
   classifyHumanAuditPaymentError,
   purchaseHumanAuditEntitlement,
@@ -144,7 +144,25 @@ export function HumanAuditPaywallDialog({
             ? "Check Your Wallet"
             : status === "processing" || status === "confirmed"
               ? "Confirming Payment"
-              : "Pay $0.50 USDC";
+              : "Pay 0.5 USDC";
+
+  const title =
+    ready
+      ? "Payment Confirmed"
+      : busy
+        ? "Confirming payment"
+        : "You've used your free audits";
+
+  const description =
+    ready
+      ? ""
+      : busy
+        ? `Authorizing 0.5 USDC payment on ${humanPaymentChain.name}. Check your wallet to approve the transaction.`
+        : !connected
+          ? "Run another audit for 0.5 USDC. Connect your wallet to continue."
+          : !correctNetwork
+            ? `Switch your wallet to ${humanPaymentChain.name} to complete the 0.5 USDC payment.`
+            : `Run another audit for 0.5 USDC on ${humanPaymentChain.name}.`;
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
@@ -158,52 +176,55 @@ export function HumanAuditPaywallDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="audit-payment-title"
-        aria-describedby="audit-payment-description"
+        aria-describedby={description ? "audit-payment-description" : undefined}
         className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-950"
       >
         <button
           type="button"
           onClick={onClose}
           disabled={busy}
-          className="absolute right-3 top-3 inline-flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40 dark:hover:bg-slate-900 dark:hover:text-slate-200"
+          className="absolute right-3 top-3 inline-flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40 dark:hover:bg-slate-900 dark:hover:text-slate-200"
           aria-label="Close"
         >
           <X className="size-4" />
         </button>
 
-        <div className="flex size-9 items-center justify-center rounded-xl bg-orange-50 text-orange-600 dark:bg-orange-950/35 dark:text-orange-400">
-          <CreditCard className="size-4.5" />
+        <div className="flex items-center gap-2.5">
+          {ready && (
+            <span
+              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 animate-in zoom-in-75 duration-200"
+              aria-hidden="true"
+            >
+              <Check className="size-3.5 stroke-[3]" />
+            </span>
+          )}
+          <h2
+            id="audit-payment-title"
+            className="text-lg font-bold tracking-tight text-slate-950 dark:text-white"
+          >
+            {title}
+          </h2>
         </div>
-        <h2
-          id="audit-payment-title"
-          className="mt-4 text-lg font-bold tracking-tight text-slate-950 dark:text-white"
-        >
-          Your free audits are used
-        </h2>
-        <p
-          id="audit-payment-description"
-          className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400"
-        >
-          Run one more complete Verdict audit for $0.50 USDC. Connect your wallet
-          to continue.
-        </p>
+        {description ? (
+          <p
+            id="audit-payment-description"
+            className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400"
+          >
+            {description}
+          </p>
+        ) : null}
 
         <div className="mt-4 rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/60">
           <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate text-[12px] font-semibold text-slate-800 dark:text-slate-100">
-                {auditDomain(auditUrl)}
-              </p>
-              <p className="mt-0.5 text-[10px] text-slate-400 dark:text-slate-500">
-                One autonomous growth investigation
-              </p>
-            </div>
-            <p className="shrink-0 text-[13px] font-bold text-slate-950 dark:text-white">
-              $0.50 USDC
-            </p>
+            <span className="text-[12.5px] font-medium text-slate-500 dark:text-slate-400">
+              Target URL
+            </span>
+            <span className="truncate font-mono text-[12.5px] font-semibold text-slate-900 dark:text-white">
+              {auditUrl}
+            </span>
           </div>
           <div className="mt-2 flex items-center justify-between border-t border-slate-200/70 pt-2 text-[10px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
-            <span>{humanPaymentNetworkLabel}</span>
+            <span>{humanPaymentChain.name}</span>
             {connected && address ? (
               <button
                 type="button"
@@ -223,19 +244,21 @@ export function HumanAuditPaywallDialog({
           autoFocus
           disabled={busy || switchingNetwork || (action === "pay" && !walletClient)}
           onClick={act}
-          className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 text-[13px] font-bold text-white shadow-xs transition-colors hover:bg-orange-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 focus-visible:ring-offset-2 disabled:opacity-55"
+          className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 text-[13px] font-bold text-white shadow-xs transition-colors duration-150 hover:bg-orange-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 focus-visible:ring-offset-2 active:scale-[0.98] disabled:opacity-55"
         >
           {busy || switchingNetwork ? (
             <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
           ) : action === "connect" ? (
             <WalletCards className="size-4" />
+          ) : action === "run" ? (
+            <Play className="size-3.5 fill-current" />
           ) : (
             <CreditCard className="size-4" />
           )}
           {actionLabel}
         </button>
 
-        {status !== "idle" ? (
+        {status !== "idle" && !ready ? (
           <p
             role="status"
             className="mt-2 text-center text-[11px] text-slate-500 dark:text-slate-400"

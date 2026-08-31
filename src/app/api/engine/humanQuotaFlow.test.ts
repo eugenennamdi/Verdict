@@ -148,7 +148,9 @@ describe("mock-backed human quota product flow", () => {
       conversationRequest("Did you inspect the pricing page?", REPORT_ID)
     );
     expect(followupResponse.status).toBe(200);
-    expect((await followupResponse.json()).message).toContain("/pricing [S2]");
+    const followupPayload = await followupResponse.json();
+    expect(followupPayload.message).toContain("/pricing as inspected");
+    expect(followupPayload.message).not.toContain("S2");
 
     const complete = vi.fn(async () => ({
       content: "General conversation remains available.",

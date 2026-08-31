@@ -65,6 +65,7 @@ export type AuditModelExecutionMetadata = {
 export const AUDIT_THINKING_LEVELS = Object.freeze({
   normalization: ThinkingLevel.LOW,
   planner: ThinkingLevel.LOW,
+  admission: ThinkingLevel.LOW,
   grader: ThinkingLevel.MEDIUM,
   qa: ThinkingLevel.MEDIUM,
 });
@@ -79,6 +80,7 @@ export type AuditModelObserver = (
 export type AuditRunModelProvenance = {
   normalization?: AuditModelExecutionMetadata;
   planner: AuditModelExecutionMetadata[];
+  admission?: AuditModelExecutionMetadata[];
   grader?: AuditModelExecutionMetadata;
 };
 
@@ -283,13 +285,20 @@ export function classifyTerminalModelError(
   error: unknown
 ): TerminalModelProviderError["safeCategory"] {
   if (error instanceof TerminalModelProviderError) return error.safeCategory;
+  const message = error instanceof Error ? error.message : "";
+  if (
+    (symbolicStatus(error).includes("INVALID_ARGUMENT") ||
+      /INVALID_ARGUMENT/i.test(message)) &&
+    /deadline.+(?:too short|minimum allowed)/i.test(message)
+  ) {
+    return "application";
+  }
   const status = numericStatus(error);
   if (status === 401) return "authentication_error";
   if (status === 403) return "permission_error";
   if ([400, 404, 405, 409, 422].includes(status ?? -1)) {
     return "invalid_request";
   }
-  const message = error instanceof Error ? error.message : "";
   if (/safety|content.?filter|blocked content/i.test(message)) {
     return "content_safety";
   }

@@ -3,6 +3,7 @@ import type { EvidenceCandidate } from "@/lib/audit/discover";
 import type { AuditModelObserver } from "@/lib/audit/model";
 import {
   EVIDENCE_CATEGORIES,
+  isAcceptedEvidencePage,
   isEvidenceCoverageSufficient,
   summarizeEvidencePage,
   type EvidenceCategory,
@@ -169,7 +170,7 @@ function parseCoverage(value: unknown): EvidenceCoverageAssessment {
 
 function plannerPrompt(input: PlanEvidenceInput): string {
   const evidence = input.pages
-    .filter((page) => page.status === "acquired")
+    .filter(isAcceptedEvidencePage)
     .map((page) => summarizeEvidencePage(page));
   const candidates = input.candidates.map((candidate) => ({
     url: candidate.url,

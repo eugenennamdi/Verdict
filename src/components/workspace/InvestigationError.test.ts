@@ -25,6 +25,18 @@ describe("InvestigationError", () => {
     );
 
     expect(html).not.toContain("MODEL_PROVIDER_TERMINAL_FAILURE");
-    expect(html).toContain("Your audit wasn&#x27;t counted");
+    expect(html).toContain("couldn&#x27;t complete this investigation");
+  });
+
+  it("never renders a serialized provider error payload", () => {
+    const html = renderToStaticMarkup(
+      createElement(InvestigationError, {
+        message:
+          '{"error":{"code":400,"message":"Manually set deadline 8s is too short. Minimum allowed deadline is 10s.","status":"INVALID_ARGUMENT"}}',
+      })
+    );
+
+    expect(html).toContain("couldn&#x27;t complete this investigation");
+    expect(html).not.toMatch(/deadline|INVALID_ARGUMENT|code(?:&quot;|\")?:400|10s/i);
   });
 });

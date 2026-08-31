@@ -17,6 +17,7 @@ export const DEEPSEEK_REASONING_POLICY: Readonly<
 > = Object.freeze({
   normalization: { thinking: "disabled" },
   planner: { thinking: "enabled", effort: "low" },
+  admission: { thinking: "enabled", effort: "low" },
   grader: { thinking: "enabled", effort: "low" },
   qa: { thinking: "enabled", effort: "low" },
 });
@@ -26,6 +27,7 @@ export const DEEPSEEK_OUTPUT_TOKEN_LIMITS: Readonly<
 > = Object.freeze({
   normalization: 800,
   planner: 1_600,
+  admission: 1_200,
   grader: 5_000,
   qa: 2_400,
 });
@@ -172,12 +174,6 @@ export function parseDeepSeekChatCompletionPayload(
     typeof message.content === "string" ? message.content.trim() : "";
   if (!content) {
     throw new AttemptLocalModelProviderError("missing_output", telemetry);
-  }
-
-  try {
-    JSON.parse(content);
-  } catch {
-    throw new AttemptLocalModelProviderError("malformed_json", telemetry);
   }
 
   return { text: content, telemetry };

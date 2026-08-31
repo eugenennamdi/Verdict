@@ -7,20 +7,9 @@ import {
   Circle,
   AlertCircle,
   ExternalLink,
-  Layers,
-  Sparkles,
 } from "lucide-react";
 import type { ActivityEvent } from "@/lib/audit/events";
-import { EVIDENCE_CATEGORIES } from "@/lib/audit/evidence";
 import type { AuditSummary, WorkspacePhase } from "./types";
-import {
-  discoveredCandidateCount,
-  evidenceSourcesFromEvents,
-  latestCoverageFromEvents,
-  presentActivityEvents,
-  stopReasonLabel,
-  successfulEvidenceSources,
-} from "./investigationPresentation";
 
 const AUDIT_PILLARS = [
   {
@@ -95,10 +84,10 @@ export function ContextualPanel({
   onMobileClose,
 }: ContextualPanelProps) {
   const [elapsed, setElapsed] = useState("0s");
-  const isInvestigating = phase === "investigating";
-  const isComplete = phase === "complete";
+  const isFailed = phase === "failed" || events.some((event) => event.type === "audit.failed");
+  const isComplete = !isFailed && phase === "complete";
+  const isInvestigating = !isFailed && phase === "investigating";
   const seen = new Set(events.map((event) => event.type));
-  const failed = events.some((event) => event.type === "audit.failed");
 
   useEffect(() => {
     if (!isInvestigating || !startTime) return;
@@ -109,40 +98,157 @@ export function ContextualPanel({
     return () => clearInterval(interval);
   }, [isInvestigating, startTime]);
 
-  const hasScoring = isComplete || seen.has("scoring.started");
   const hasReport = isComplete || seen.has("report.persisted");
 
   const company = auditResult?.identity?.company_name || auditResult?.company_name || targetDomain || "Startup";
   const identity = auditResult?.identity;
-  const evidence = auditResult?.evidence;
-  const activityRows = presentActivityEvents(events);
-  const persistedSources = successfulEvidenceSources(evidence);
-  const sources = persistedSources.length > 0
-    ? persistedSources
-    : evidenceSourcesFromEvents(events);
-  const candidatesDiscovered =
-    auditResult?.investigation?.candidatesDiscovered ?? discoveredCandidateCount(events);
-  const coverage = auditResult?.finalCoverage ?? latestCoverageFromEvents(events);
-  const stopLabel = stopReasonLabel(auditResult?.stopReason ?? auditResult?.investigation?.stopReason);
+  const hasIdentity = Boolean(
+    identity?.company_name ||
+    identity?.inferred_description ||
+    identity?.target_audience ||
+    identity?.primary_cta
+  );
+
+  /* 1. Company Context Group */
+  const contextSection = (hasIdentity || (isInvestigating && !isFailed)) && (
+    <section
+      aria-labelledby="section-context"
+      className="rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-xs dark:border-slate-800/80 dark:bg-slate-900/80"
+    >
+      <div className="flex items-center justify-between pb-2">
+        <h3
+          id="section-context"
+          className="text-[12.5px] font-semibold text-slate-900 dark:text-white"
+        >
+          Company Profile
+        </h3>
+        {targetUrl && (
+          <a
+            href={targetUrl.startsWith("http") ? targetUrl : `https://${targetUrl}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group inline-flex items-center gap-1 font-mono text-[11px] text-slate-500 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+            title="Open startup website"
+            aria-label={`Open website for ${targetDomain || targetUrl}`}
+          >
+            <span className="max-w-[110px] truncate">{targetDomain || targetUrl}</span>
+            <ExternalLink className="size-2.5 shrink-0" />
+          </a>
+        )}
+      </div>
+
+      {identity ? (
+        <dl className="space-y-2 text-[12px]">
+          <div>
+            <dt className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Startup</dt>
+            <dd className="font-semibold text-slate-900 dark:text-white">{company}</dd>
+          </div>
+
+          {identity.inferred_description && (
+            <div>
+              <dt className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Value proposition</dt>
+              <dd className="leading-relaxed text-slate-800 dark:text-slate-200">
+                {identity.inferred_description}
+              </dd>
+            </div>
+          )}
+
+          {identity.target_audience && (
+            <div>
+              <dt className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Target ICP</dt>
+              <dd className="leading-relaxed text-slate-800 dark:text-slate-200">{identity.target_audience}</dd>
+            </div>
+          )}
+
+          {identity.primary_cta && (
+            <div>
+              <dt className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Primary CTA</dt>
+              <dd className="font-semibold text-slate-900 dark:text-white">{identity.primary_cta}</dd>
+            </div>
+          )}
+        </dl>
+      ) : isInvestigating ? (
+        <div className="space-y-2 py-1" aria-hidden="true">
+          <div className="h-3 w-4/5 rounded bg-slate-200/60 dark:bg-slate-800/60" />
+          <div className="h-3 w-3/5 rounded bg-slate-200/60 dark:bg-slate-800/60" />
+          <div className="h-3 w-2/3 rounded bg-slate-200/60 dark:bg-slate-800/60" />
+        </div>
+      ) : null}
+    </section>
+  );
+
+  /* 2. Evaluation Group */
+  const evaluationSection = !isFailed && (
+    <section
+      aria-labelledby="section-evaluation"
+      className="rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-xs dark:border-slate-800/80 dark:bg-slate-900/80"
+    >
+      <div className="pb-2">
+        <h3
+          id="section-evaluation"
+          className="text-[12.5px] font-semibold text-slate-900 dark:text-white"
+        >
+          Evaluation
+        </h3>
+      </div>
+
+      <ol className="space-y-2 pt-0.5">
+        {AUDIT_PILLARS.map((pillar) => {
+          const isPillarDone = isComplete || hasReport;
+
+          return (
+            <li key={pillar.key} className="flex items-start gap-2 text-[12px]">
+              <span className="mt-0.5 shrink-0">
+                {isPillarDone ? (
+                  <span className="flex size-3.5 items-center justify-center rounded-full bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+                    <Check className="size-2 stroke-[3]" />
+                  </span>
+                ) : (
+                  <Circle className="size-3.5 text-slate-300 dark:text-slate-700" />
+                )}
+              </span>
+
+              <div className="min-w-0 flex-1">
+                <span
+                  className={`block font-medium ${
+                    isPillarDone
+                      ? "text-slate-900 dark:text-white"
+                      : "text-slate-700 dark:text-slate-300"
+                  }`}
+                >
+                  {pillar.title}
+                </span>
+                <p className="leading-snug text-[11px] text-slate-500 dark:text-slate-400">
+                  {pillar.desc}
+                </p>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
 
   const panelContent = (
     <aside
-      className="flex h-full w-[360px] max-w-[90vw] flex-col border-l border-slate-200/80 bg-slate-50/70 dark:border-slate-800/80 dark:bg-slate-900/90 backdrop-blur-md transition-all duration-200 ease-out font-sans"
-      aria-label="Audit context panel"
+      className="flex h-full w-[340px] xl:w-[360px] max-w-[90vw] flex-col border-l border-slate-200/80 bg-slate-100/60 dark:border-slate-800/80 dark:bg-slate-950 transition-[width,transform] duration-200 ease-out font-sans select-text"
+      aria-label="Audit context"
     >
       {/* Panel Header */}
-      <div className="relative flex h-14 items-center justify-between border-b border-slate-200/80 px-4 dark:border-slate-800/80">
-        <div className="flex items-center gap-2.5">
-          <span className="text-[12px] font-black uppercase tracking-[0.16em] text-slate-900 dark:text-white">
+      <div className="flex h-13 items-center justify-between border-b border-slate-200/80 bg-white/80 dark:bg-slate-950/80 px-4 dark:border-slate-800/80 shrink-0 backdrop-blur-md">
+        <div className="flex items-center gap-2">
+          <h2 className="text-[13px] font-bold tracking-tight text-slate-950 dark:text-white">
             Audit Context
-          </span>
+          </h2>
 
           {isInvestigating && (
-            <span className="font-mono text-[10px] text-slate-400">{elapsed}</span>
+            <span className="font-mono text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+              {elapsed}
+            </span>
           )}
 
-          {failed && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/20 bg-rose-500/10 px-2 py-0.5 text-[11px] font-bold text-rose-600 dark:text-rose-400">
+          {isFailed && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-rose-500/10 px-1.5 py-0.5 text-[10.5px] font-semibold text-rose-600 dark:text-rose-400">
               <AlertCircle className="size-3" />
               Failed
             </span>
@@ -155,239 +261,25 @@ export function ContextualPanel({
             onClose();
             onMobileClose?.();
           }}
-          className="inline-flex size-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition-colors"
-          title="Close panel"
-          aria-label="Close audit context panel"
+          className="inline-flex size-7 items-center justify-center rounded-lg text-slate-400 transition-colors duration-150 hover:bg-slate-200/60 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950/20 active:scale-[0.96] dark:text-slate-500 dark:hover:bg-slate-800/80 dark:hover:text-white dark:focus-visible:ring-white/20"
+          title="Close audit context"
+          aria-label="Close audit context"
         >
           <X className="size-4" />
         </button>
-
-        {/* Clean Linear Loading Bar when Investigating */}
-        {isInvestigating && (
-          <>
-            <style>{`
-              @keyframes shimmerBar {
-                0% { transform: translateX(-100%); }
-                100% { transform: translateX(350%); }
-              }
-            `}</style>
-            <div className="absolute bottom-0 left-0 right-0 h-[2px] overflow-hidden bg-slate-100 dark:bg-slate-800">
-              <div
-                className="h-full bg-orange-500 rounded-full"
-                style={{
-                  width: "40%",
-                  animation: "shimmerBar 1.6s ease-in-out infinite",
-                }}
-              />
-            </div>
-          </>
-        )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 text-slate-900 dark:text-slate-100">
-        {/* Real operational activity only; event payloads are deliberately whitelisted. */}
-        {activityRows.length > 0 && (
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/60">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 dark:border-slate-800/60">
-              <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
-                Investigation Activity
-              </span>
-              {candidatesDiscovered > 0 && (
-                <span className="text-[10px] font-semibold text-slate-400">
-                  {candidatesDiscovered} discovered
-                </span>
-              )}
-            </div>
-            <ol className="mt-3 space-y-2.5">
-              {activityRows.map((row, index) => (
-                <li key={`${row.type}-${index}`} className="flex items-start gap-2.5 text-[12px]">
-                  {row.tone === "warning" || row.tone === "failed" ? (
-                    <AlertCircle className={`mt-0.5 size-4 shrink-0 ${row.tone === "failed" ? "text-rose-500" : "text-amber-500"}`} />
-                  ) : row.tone === "active" && isInvestigating && index === activityRows.length - 1 ? (
-                    <span className="mt-1 size-2.5 shrink-0 rounded-full bg-orange-500 ring-4 ring-orange-500/10" />
-                  ) : (
-                    <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
-                      <Check className="size-2.5" strokeWidth={3} />
-                    </span>
-                  )}
-                  <span className="min-w-0">
-                    <span className="block font-medium text-slate-800 dark:text-slate-200">{row.label}</span>
-                    {row.detail && (
-                      <span className="block truncate text-[11px] text-slate-400 dark:text-slate-500">{row.detail}</span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ol>
-            {stopLabel && isComplete && (
-              <p className="mt-3 border-t border-slate-100 pt-2.5 text-[11px] text-slate-500 dark:border-slate-800/60 dark:text-slate-400">
-                {stopLabel}
-              </p>
-            )}
+      {/* Panel Body: Company Context and Evaluation */}
+      <div className="flex-1 overflow-y-auto p-3.5 space-y-3 text-slate-900 dark:text-slate-100">
+        {contextSection}
+        {evaluationSection}
+        {!contextSection && !evaluationSection && (
+          <div className="rounded-xl border border-slate-200/80 bg-white p-4 text-center dark:border-slate-800/80 dark:bg-slate-900/80">
+            <p className="text-[12px] text-slate-500 dark:text-slate-400">
+              {isFailed ? "Audit could not continue." : "Context appears once analysis begins."}
+            </p>
           </div>
         )}
-
-        {(sources.length > 0 || candidatesDiscovered > 0) && (
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/60">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 dark:border-slate-800/60">
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
-                <Layers className="size-3" /> Sources
-              </span>
-              <span className="text-[10px] font-semibold text-slate-400">
-                {sources.length} inspected
-              </span>
-            </div>
-            <div className="mt-2.5 space-y-2">
-              {sources.map((source) => (
-                <a
-                  key={source.url}
-                  href={source.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2 transition-colors hover:border-orange-500/30 dark:border-slate-800/60 dark:bg-slate-950/40"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-[11.5px] font-semibold text-slate-800 dark:text-slate-200">
-                      {source.path === "/" ? targetDomain ?? source.url : source.path}
-                    </span>
-                    <span className="text-[10.5px] capitalize text-slate-400">
-                      {source.role === "homepage" ? "Homepage" : source.category ?? "Supporting"}
-                    </span>
-                  </span>
-                  <ExternalLink className="size-3 shrink-0 text-slate-400" />
-                </a>
-              ))}
-              {sources.length === 0 && (
-                <p className="text-[11px] text-slate-400">No additional evidence pages were acquired.</p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {coverage && (
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/60">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 dark:border-slate-800/60">
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
-                <Sparkles className="size-3" /> Evidence Coverage
-              </span>
-              <span className="text-[9.5px] text-slate-400">Not a score</span>
-            </div>
-            <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2">
-              {EVIDENCE_CATEGORIES.map((category) => (
-                <div key={category} className="flex items-center justify-between gap-2 text-[11px]">
-                  <span className="capitalize text-slate-500 dark:text-slate-400">{category}</span>
-                  <span className={`font-semibold capitalize ${coverage[category] === "high" ? "text-emerald-600 dark:text-emerald-400" : coverage[category] === "medium" ? "text-amber-600 dark:text-amber-400" : "text-slate-400"}`}>
-                    {coverage[category]}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 1. Extracted Startup Context & ICP */}
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/60 space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5">
-            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
-              Extracted Context
-            </span>
-            {targetUrl && (
-              <a
-                href={targetUrl.startsWith("http") ? targetUrl : `https://${targetUrl}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
-                title="Open startup website"
-              >
-                <span>{targetDomain || targetUrl}</span>
-                <ExternalLink className="size-3" />
-              </a>
-            )}
-          </div>
-
-          {identity ? (
-            <div className="space-y-2 text-[12px]">
-              <div>
-                <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">Startup Name</span>
-                <p className="font-bold text-slate-900 dark:text-white">{company}</p>
-              </div>
-
-              {identity.inferred_description && (
-                <div>
-                  <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">Value Proposition</span>
-                  <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-[12px]">
-                    {identity.inferred_description}
-                  </p>
-                </div>
-              )}
-
-              {identity.target_audience && (
-                <div>
-                  <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">Target ICP</span>
-                  <p className="text-slate-700 dark:text-slate-300">{identity.target_audience}</p>
-                </div>
-              )}
-
-              {identity.primary_cta && (
-                <div>
-                  <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">Primary CTA</span>
-                  <p className="text-slate-900 dark:text-white font-medium">{identity.primary_cta}</p>
-                </div>
-              )}
-            </div>
-          ) : isInvestigating ? (
-            <div className="space-y-2 py-1">
-              <div className="h-3 w-4/5 rounded bg-slate-100 dark:bg-slate-800 animate-pulse" />
-              <div className="h-3 w-3/5 rounded bg-slate-100 dark:bg-slate-800 animate-pulse" />
-              <div className="h-3 w-2/3 rounded bg-slate-100 dark:bg-slate-800 animate-pulse" />
-            </div>
-          ) : (
-            <p className="text-[12px] text-slate-400 dark:text-slate-600">Context will appear once investigation begins.</p>
-          )}
-        </div>
-
-        {/* 2. Seven-Pillar Evaluation Tasks */}
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/60 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
-              Evaluation Process
-            </span>
-            <span className="text-[10px] font-bold font-mono text-slate-400">7 PILLARS</span>
-          </div>
-
-          <ol className="space-y-2">
-            {AUDIT_PILLARS.map((pillar) => {
-              const isPillarDone = isComplete || hasReport;
-              const isPillarActive = isInvestigating && hasScoring && !hasReport;
-
-              return (
-                <li
-                  key={pillar.key}
-                  className="flex items-start gap-2.5 text-[12.5px] rounded-xl p-2.5 bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800/50"
-                >
-                  <span className="mt-0.5 shrink-0">
-                    {isPillarDone ? (
-                      <span className="flex size-4 items-center justify-center rounded-full bg-slate-900 text-white dark:bg-white dark:text-slate-900">
-                        <Check className="size-2.5 stroke-[3]" />
-                      </span>
-                    ) : (
-                      <Circle className={`size-4 ${isPillarActive ? "text-orange-500" : "text-slate-300 dark:text-slate-700"}`} />
-                    )}
-                  </span>
-
-                  <div className="min-w-0 flex-1">
-                    <span className={`font-semibold block ${isPillarDone || isPillarActive ? "text-slate-900 dark:text-white" : "text-slate-400 dark:text-slate-600"}`}>
-                      {pillar.title}
-                    </span>
-                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
-                      {pillar.desc}
-                    </p>
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        </div>
       </div>
     </aside>
   );
