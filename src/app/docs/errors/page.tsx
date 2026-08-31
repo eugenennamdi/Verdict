@@ -26,8 +26,8 @@ export default function ErrorsPage() {
     },
     {
       status: "402",
-      code: "PAYMENT_REQUIRED",
-      message: "Payment challenge issued via the x402 protocol.",
+      code: "PAYMENT-REQUIRED",
+      message: "Payment challenge issued via the x402 protocol (PAYMENT-REQUIRED header).",
       recovery: "Sign and attach the PAYMENT-SIGNATURE header authorization for $0.50 USDC on Base.",
     },
     {
@@ -47,6 +47,12 @@ export default function ErrorsPage() {
       code: "AUDIT_FAILED",
       message: "The audit could not be completed due to an unrecoverable internal error.",
       recovery: "Log the report error. Unsettled entitlements are released safely.",
+    },
+    {
+      status: "500",
+      code: "X402_CONFIGURATION_ERROR",
+      message: "The server encountered a configuration error with its x402 payment rail.",
+      recovery: "Ensure server-side payment configuration and credentials are set correctly.",
     },
   ];
 

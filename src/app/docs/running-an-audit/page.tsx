@@ -71,7 +71,7 @@ export default function RunningAnAuditPage() {
           Investigation Timing & Execution
         </h2>
         <p className="text-[15px] leading-relaxed text-slate-600 dark:text-slate-300">
-          Most audits take around <strong>60 to 90 seconds</strong> to run end-to-end. The exact duration
+          Most audits complete in around <strong>one to a few minutes</strong> end-to-end. The exact duration
           depends on site complexity, JavaScript rendering overhead, candidate discovery volume,
           and model tier response times.
         </p>

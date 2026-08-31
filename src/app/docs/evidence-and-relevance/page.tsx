@@ -10,26 +10,26 @@ export const metadata: Metadata = {
 };
 
 export default function EvidenceAndRelevancePage() {
-  const rejectionReasons = [
+  const rejectionCategories = [
     {
-      code: "unrelated_business",
-      title: "Unrelated Business or Entity",
-      desc: "Content belonging to a subsidiary, sister product, partner, or sponsor that does not reflect the core startup.",
+      title: "Unrelated Entity or Subsidiary",
+      desc: "Content belonging to a subsidiary, sister brand, partner, or sponsor that does not reflect the core startup.",
     },
     {
-      code: "user_generated_content",
-      title: "User-Generated Content",
-      desc: "Public forums, community comment threads, unmoderated boards, or customer support tickets with high noise.",
+      title: "Unrelated Subject Matter",
+      desc: "Legal boilerplate, compliance policies, or generic platform templates unrelated to product positioning and conversion.",
     },
     {
-      code: "stale_content",
-      title: "Stale or Deprecated Content",
-      desc: "Archived changelogs, legacy subdomains, or out-of-date product documentation that contradicts the current product surface.",
+      title: "User-Generated Noise",
+      desc: "Public discussion boards, community comment threads, or unmoderated tickets with high noise-to-signal ratios.",
     },
     {
-      code: "relevance_unverified",
-      title: "Relevance Unverified (Fail-Closed)",
-      desc: "Ambiguous or truncated pages where entity relevance cannot be conclusively established.",
+      title: "Stale or Misrouted Pages",
+      desc: "Archived changelogs, legacy subdomains, or deprecated documentation that contradicts current product surfaces.",
+    },
+    {
+      title: "Unverified Relevance (Fail-Closed)",
+      desc: "Ambiguous or truncated pages where relevance to the audited company cannot be conclusively established.",
     },
   ];
 
@@ -85,20 +85,15 @@ export default function EvidenceAndRelevancePage() {
           Relevance Rejection Categories
         </h2>
         <p className="text-[15px] leading-relaxed text-slate-600 dark:text-slate-300">
-          Pages that fail the relevance gate are categorized using deterministic reason codes:
+          Pages that fail the relevance gate are filtered out before scoring using clear evaluation criteria:
         </p>
 
         <div className="grid gap-3.5 sm:grid-cols-2 pt-2">
-          {rejectionReasons.map((reason) => (
+          {rejectionCategories.map((reason) => (
             <div
-              key={reason.code}
+              key={reason.title}
               className="rounded-2xl border border-slate-200/80 bg-white p-5 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs space-y-1.5"
             >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                  {reason.code}
-                </span>
-              </div>
               <h3 className="text-sm font-bold text-slate-950 dark:text-white">
                 {reason.title}
               </h3>
@@ -112,8 +107,9 @@ export default function EvidenceAndRelevancePage() {
 
       <DocsCallout type="note" title="Public evidence metrics">
         In the public API response and report summary, Verdict outputs both <code>pagesInspected</code>{" "}
-        and <code>pagesAccepted</code> so consumers can verify how much acquired content passed the
-        relevance admission boundary.
+        (pages successfully acquired during the investigation) and <code>pagesAccepted</code>{" "}
+        (acquired pages admitted through the relevance boundary) alongside the admitted{" "}
+        <code>sources</code> grounding array.
       </DocsCallout>
 
       <DocsPagination

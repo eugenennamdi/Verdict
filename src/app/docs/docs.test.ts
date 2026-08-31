@@ -34,6 +34,23 @@ const BANNED_LEGACY_TOKENS = [
   "1 audit per 12",
 ];
 
+const BANNED_DOCS_PATTERNS = [
+  "critical failure",
+  "critical misalignment",
+  "world-class",
+  "world class",
+  "0 to 10 scale",
+  "0–10 scale",
+  "0-10 scale",
+  "60–90",
+  "60-90",
+  "budgetusage",
+  "finalcoverage",
+  "planningrounds",
+  "acquisitionmethod",
+  "graderchars",
+];
+
 describe("Verdict Documentation Overhaul", () => {
   it("defines valid navigation structure across all groups", () => {
     expect(DOCS_NAVIGATION.length).toBeGreaterThanOrEqual(5);
@@ -138,6 +155,33 @@ describe("Verdict Documentation Overhaul", () => {
           `Docs page ${item.href} contains legacy token: "${legacyToken}"`
         ).toBe(false);
       }
+
+      for (const pattern of BANNED_DOCS_PATTERNS) {
+        expect(
+          content.includes(pattern),
+          `Docs page ${item.href} contains prohibited pattern: "${pattern}"`
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("ensures public agent API examples conform to public contract", () => {
+    const agentsPath = join(process.cwd(), "src/app/agents/page.tsx");
+    const content = readFileSync(agentsPath, "utf-8").toLowerCase();
+
+    for (const pattern of BANNED_DOCS_PATTERNS) {
+      expect(
+        content.includes(pattern),
+        `Agents page contains prohibited pattern: "${pattern}"`
+      ).toBe(false);
+    }
+
+    for (const legacyToken of BANNED_LEGACY_TOKENS) {
+      const regex = new RegExp(`\\b${legacyToken}\\b`, "i");
+      expect(
+        regex.test(content),
+        `Agents page contains legacy token: "${legacyToken}"`
+      ).toBe(false);
     }
   });
 });

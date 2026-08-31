@@ -7,7 +7,7 @@ import { DocsCodeBlock } from "@/components/docs/DocsCodeBlock";
 export const metadata: Metadata = {
   title: "Quickstart",
   description:
-    "Get started with Verdict in under two minutes by auditing a startup URL.",
+    "Get started with Verdict by auditing a startup URL.",
 };
 
 export default function QuickstartPage() {
@@ -83,7 +83,7 @@ export default function QuickstartPage() {
             Verdict executes a bounded multi-page research pass: acquiring primary homepage evidence,
             identifying the company identity, discovering supporting pages, filtering for relevance,
             and grading the evidence across seven growth dimensions. Most audits complete in
-            approximately 60–90 seconds.
+            around one to a few minutes, depending on the target site and investigation depth.
           </p>
         </div>
 
@@ -100,7 +100,7 @@ export default function QuickstartPage() {
             When the audit completes, the inline results card displays:
           </p>
           <ul className="list-disc pl-14 space-y-1.5 text-sm text-slate-600 dark:text-slate-400">
-            <li><strong>Growth Readiness Score (0–100):</strong> The deterministic composite readiness rating.</li>
+            <li><strong>Growth Readiness Score (0–100):</strong> The composite readiness rating calculated through fixed dimension weights.</li>
             <li><strong>Normalized Company Profile:</strong> Core value proposition, target audience, and primary CTA.</li>
             <li><strong>Primary Growth Bottleneck:</strong> The single most critical operational constraint.</li>
             <li><strong>Highest-Leverage Opportunity:</strong> The highest-ROI tactical recommendation.</li>

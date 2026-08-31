@@ -34,8 +34,8 @@ export default function AuditFollowUpsPage() {
         </h2>
         <p className="text-[15px] leading-relaxed text-slate-600 dark:text-slate-300">
           Unlike generic chat interfaces, Verdict&apos;s follow-up engine operates directly over the
-          structured audit payload, evidence pages, and diagnostic scores produced during the audit.
-          Responses are strictly grounded in the audited facts rather than hallucinated generalities.
+          structured audit findings, admitted source context, and qualitative evaluations produced during
+          the audit. Responses are strictly grounded in the audited facts rather than hallucinated generalities.
         </p>
 
         <div className="grid gap-3.5 sm:grid-cols-2 pt-2">
@@ -45,9 +45,10 @@ export default function AuditFollowUpsPage() {
             </h3>
             <ul className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400">
               <li>• Normalized company identity & core CTA</li>
-              <li>• Seven-pillar evaluation text and findings</li>
+              <li>• Seven-pillar qualitative evaluation text and findings</li>
               <li>• Identified primary bottleneck & leverage points</li>
               <li>• Prioritized recommendation list with impact/effort</li>
+              <li>• Admitted source pages & inspection scope context</li>
             </ul>
           </div>
 
@@ -89,15 +90,16 @@ export default function AuditFollowUpsPage() {
       </section>
 
       <DocsCallout type="security" title="Private Model Boundary">
-        Verdict never exposes raw prompts, private model reasoning tokens, or internal crawler
-        telemetry during follow-up Q&A. All answers are synthesized strictly from the public audit report.
+        Follow-up responses are strictly grounded in the preserved audit record and admitted source context.
+        Low-level crawler and planner telemetry is excluded from customer-facing answers, and private
+        model reasoning is never exposed, ensuring conversations remain focused on actionable growth insights.
       </DocsCallout>
 
       <DocsPagination
         prev={{
           title: "Growth Readiness Score",
           href: "/docs/growth-readiness-score",
-          description: "Weights and interpretation tiers.",
+          description: "Fixed weights and qualitative breakdown.",
         }}
         next={{
           title: "Investigation model",

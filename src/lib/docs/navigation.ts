@@ -47,7 +47,7 @@ export const DOCS_NAVIGATION: DocsNavGroup[] = [
         title: "Growth Readiness Score",
         href: "/docs/growth-readiness-score",
         description:
-          "How the 0–100 score is structured, why it is deterministic, and how to interpret it.",
+          "How the 0–100 score is structured, fixed dimension weighting, and qualitative interpretation.",
       },
       {
         title: "Audit follow-ups",
@@ -64,7 +64,7 @@ export const DOCS_NAVIGATION: DocsNavGroup[] = [
         title: "Investigation model",
         href: "/docs/investigation-model",
         description:
-          "Multi-page discovery, selective acquisition, evidence coverage, and deterministic grading.",
+          "Multi-page discovery, selective acquisition, evidence coverage, and structured grading.",
       },
       {
         title: "Evidence & relevance",
@@ -151,7 +151,7 @@ export const DOCS_NAVIGATION: DocsNavGroup[] = [
         title: "Scoring methodology",
         href: "/docs/scoring-methodology",
         description:
-          "Mathematical weighting formula, dimension definitions, and rubric score tiers.",
+          "Mathematical weighting formula, dimension definitions, and structured evaluation.",
       },
       {
         title: "Limits & usage",

@@ -38,8 +38,8 @@ export default function InvestigationModelPage() {
     },
     {
       number: "06",
-      title: "Deterministic 7-Pillar Grading",
-      desc: "The combined, admitted evidence pool is evaluated against the 7-pillar growth framework to produce the final score and findings.",
+      title: "Evidence-Grounded 7-Pillar Evaluation",
+      desc: "The combined, admitted evidence pool is evaluated across the 7 growth dimensions, and the final Growth Readiness Score is calculated via deterministic weighted aggregation.",
     },
     {
       number: "07",

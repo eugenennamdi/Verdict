@@ -53,7 +53,7 @@ const investigation = [
   "Assesses evidence gaps and selects useful supporting pages.",
   "Stops on sufficiency, planner completion, unavailable evidence, or a hard budget.",
   "Caps pages, evidence characters, planning rounds, and gather time.",
-  "Grades the combined evidence and produces the deterministic seven-pillar score.",
+  "Grades the combined evidence and computes the overall Growth Readiness Score via fixed weights.",
 ] as const;
 
 function CodeBlock({ children }: { children: string }) {
@@ -223,9 +223,9 @@ export default function AgentsPage() {
               </div>
             </div>
             <p className="max-w-3xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-              The full public result includes the verdict, seven scoring pillars, priority matrix,
-              evidence coverage, and investigation budget summary. It excludes scraped markdown,
-              prompts, payment signatures, and private model reasoning.
+              The full public result includes the overall Growth Readiness Score, qualitative pillar
+              evaluations, source grounding, executive verdict, priority matrix, and evidence coverage
+              metrics. It excludes scraped markdown, prompts, payment signatures, and private model reasoning.
             </p>
           </section>
 
@@ -304,7 +304,7 @@ export default function AgentsPage() {
             </div>
             <div className="rounded-2xl border border-slate-200/80 bg-white p-5 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-sm">
               <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-                The public response reports pages inspected, coverage, planning rounds, budget use,
+                The public response reports pages inspected, pages accepted, evidence coverage, sources,
                 and the stop reason so downstream agents can judge the investigation scope.
               </p>
             </div>

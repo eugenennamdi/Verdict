@@ -6,7 +6,7 @@ import { DocsCallout } from "@/components/docs/DocsCallout";
 export const metadata: Metadata = {
   title: "Growth Readiness Score",
   description:
-    "Mathematical formula, dimension weights, and score interpretation tiers for Verdict's Growth Readiness Score.",
+    "Mathematical formula, dimension weights, and qualitative score interpretation for Verdict's Growth Readiness Score.",
 };
 
 export default function GrowthReadinessScorePage() {
@@ -59,7 +59,7 @@ export default function GrowthReadinessScorePage() {
           Growth Readiness Score
         </h1>
         <p className="text-lg leading-relaxed text-slate-600 dark:text-slate-300 pt-1">
-          The Growth Readiness Score is a deterministic index (0–100) that evaluates a company&apos;s
+          The Growth Readiness Score is a composite index (0–100) that evaluates a company&apos;s
           readiness to scale customer acquisition, convert traffic efficiently, and deploy capital.
         </p>
       </div>
@@ -67,12 +67,16 @@ export default function GrowthReadinessScorePage() {
       {/* Section: Deterministic Nature */}
       <section className="space-y-4">
         <h2 className="text-xl font-bold text-slate-950 dark:text-white">
-          Deterministic Mathematical Formula
+          Deterministic Mathematical Weighting
         </h2>
         <p className="text-[15px] leading-relaxed text-slate-600 dark:text-slate-300">
-          Verdict does not ask an LLM to generate an arbitrary score number. Instead, the engine
-          evaluates specific evidence across seven structured growth dimensions and calculates the
-          final score mathematically using fixed, deterministic weights:
+          The overall Growth Readiness Score is calculated using fixed weights applied to structured
+          dimension evaluations. The aggregation formula is deterministic: the same dimension
+          evaluations produce the same overall score.
+        </p>
+        <p className="text-[15px] leading-relaxed text-slate-600 dark:text-slate-300">
+          Dimension evaluations are evidence-grounded model assessments validated through Verdict&apos;s
+          structured audit pipeline, which are then aggregated mathematically using fixed weights:
         </p>
 
         {/* Weights Table */}
@@ -107,67 +111,52 @@ export default function GrowthReadinessScorePage() {
       {/* Section: Score Interpretation */}
       <section className="space-y-4 pt-4 border-t border-slate-200/80 dark:border-slate-800/80">
         <h2 className="text-xl font-bold text-slate-950 dark:text-white">
-          Score Interpretation Tiers
+          Score Interpretation & Qualitative Breakdown
         </h2>
         <p className="text-[15px] leading-relaxed text-slate-600 dark:text-slate-300">
-          The Growth Readiness Score should be interpreted in conjunction with the written
-          findings and recommended priorities:
+          The Growth Readiness Score represents a single unified diagnostic metric (0–100). Rather than
+          imposing artificial score tiers or arbitrary tier labels, Verdict pairs the overall numerical
+          rating with detailed qualitative analysis:
         </p>
 
         <div className="grid gap-3.5 sm:grid-cols-2 pt-2">
           <div className="rounded-2xl border border-slate-200/80 bg-white p-5 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-xs font-bold text-rose-600 dark:text-rose-400">0 – 40</span>
-              <span className="font-mono text-[11px] uppercase tracking-wider text-slate-400">Foundational Flaws</span>
-            </div>
             <h3 className="text-sm font-bold text-slate-950 dark:text-white">
-              Critical Misalignment
+              Primary Bottleneck Synthesis
             </h3>
             <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
-              The website has severe clarity issues, confusing messaging, undefined target customer
-              profiles, or heavy onboarding friction. Spending on paid traffic would result in heavy bounce rates.
+              Isolates the single most critical constraint holding back customer acquisition or conversion,
+              pinpointing where immediate intervention will yield the highest return.
             </p>
           </div>
 
           <div className="rounded-2xl border border-slate-200/80 bg-white p-5 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-xs font-bold text-amber-600 dark:text-amber-400">41 – 70</span>
-              <span className="font-mono text-[11px] uppercase tracking-wider text-slate-400">Leaky Funnel</span>
-            </div>
             <h3 className="text-sm font-bold text-slate-950 dark:text-white">
-              Mixed Readiness
+              Qualitative Dimension Diagnostics
             </h3>
             <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
-              The core product value is clear to some visitors, but significant conversion leaks remain
-              in proof points, onboarding friction, or copy resonance. High-leverage fixes will unlock substantial gains.
+              In-depth assessment across all 7 growth dimensions highlighting concrete strengths
+              (<em>What works</em>) and specific friction points (<em>Areas to improve</em>).
             </p>
           </div>
 
           <div className="rounded-2xl border border-slate-200/80 bg-white p-5 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">71 – 84</span>
-              <span className="font-mono text-[11px] uppercase tracking-wider text-slate-400">Growth-Ready</span>
-            </div>
             <h3 className="text-sm font-bold text-slate-950 dark:text-white">
-              Strong Execution
+              Actionable Priority Matrix
             </h3>
             <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
-              Sharp positioning, compelling proof, and smooth onboarding. The company is in a strong
-              position to deploy capital into growth channels while optimizing secondary touchpoints.
+              A ranked sequence of tactical improvements with explicit strategic rationale, estimated
+              marginal impact, and implementation effort.
             </p>
           </div>
 
           <div className="rounded-2xl border border-slate-200/80 bg-white p-5 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">85 – 100</span>
-              <span className="font-mono text-[11px] uppercase tracking-wider text-slate-400">World-Class</span>
-            </div>
             <h3 className="text-sm font-bold text-slate-950 dark:text-white">
-              Exceptional Rigor
+              Grounded Narrative Interpretation
             </h3>
             <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
-              Industry-leading value proposition, frictionless user journey, undeniable social proof,
-              and strong defensibility. Represents top-tier commercial and product execution.
+              A narrative explanation of what the score indicates about the startup&apos;s current
+              commercial surface and scalability readiness.
             </p>
           </div>
         </div>

@@ -112,9 +112,9 @@ export default function DocsIntroPage() {
             },
             {
               step: "05",
-              title: "Deterministic 7-pillar evaluation",
+              title: "7-pillar evaluation & score computation",
               detail:
-                "The combined evidence is graded across seven foundational growth dimensions to compute a single Growth Readiness Score (0–100).",
+                "The combined evidence is graded across seven foundational growth dimensions to compute a single Growth Readiness Score (0–100) via fixed weights.",
             },
             {
               step: "06",
@@ -151,11 +151,11 @@ export default function DocsIntroPage() {
         <div className="grid gap-3.5 sm:grid-cols-3">
           <div className="rounded-2xl border border-slate-200/80 bg-white p-4.5 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs">
             <h3 className="text-sm font-bold text-slate-950 dark:text-white mb-1.5">
-              Deterministic Scoring
+              Deterministic Aggregation
             </h3>
             <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
-              The overall Growth Readiness Score is derived mathematically from weighted
-              rubric dimensions, not generated as an arbitrary LLM number.
+              The overall Growth Readiness Score is calculated through fixed mathematical weights
+              applied to structured dimension evaluations.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-200/80 bg-white p-4.5 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs">

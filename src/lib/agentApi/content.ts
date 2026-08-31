@@ -20,11 +20,59 @@ export const AGENT_RESPONSE_EXAMPLE = `{
   "reportId": "7c3f…91a2",
   "overallScore": 78,
   "company_name": "Example",
-  "pagesInspected": 3,
+  "identity": {
+    "company_name": "Example",
+    "inferred_description": "Developer platform for autonomous workflows",
+    "target_audience": "Engineering teams",
+    "primary_cta": "Get Started Free"
+  },
+  "the_verdict": {
+    "status": "Pass",
+    "primary_constraint": "Self-serve pricing is hidden below the fold.",
+    "highest_opportunity": "Expose transparent self-serve tiers directly on navigation.",
+    "estimated_impact": "High"
+  },
+  "score_interpretation": "Strong growth foundation with clear ICP clarity and high conversion potential.",
+  "priority_matrix": [
+    {
+      "task": "Add upfront pricing tiers",
+      "why": "Reduces friction for developer evaluation",
+      "impact": "High",
+      "effort": "Low"
+    }
+  ],
+  "pillars": {
+    "positioning": {
+      "confidence": "High",
+      "reason": "Clear positioning and distinct ICP wedge.",
+      "strengths": ["Unmistakable developer focus"],
+      "weaknesses": ["Competitor comparison is absent"]
+    },
+    "conversion": {
+      "confidence": "Medium",
+      "reason": "Missing upfront pricing on primary landing page.",
+      "strengths": ["Clear primary CTA"],
+      "weaknesses": ["Hidden pricing"]
+    }
+  },
+  "sources": [
+    {
+      "url": "https://example.com/",
+      "path": "/",
+      "role": "homepage",
+      "category": "identity",
+      "keyFindings": ["Clear value prop and primary CTA"]
+    }
+  ],
+  "pagesInspected": 2,
+  "pagesAccepted": 2,
   "stopReason": "sufficient",
   "evidenceCoverage": {
-    "pagesAcquired": 3,
-    "charsTotal": 28410
+    "pagesTotal": 2,
+    "pagesAcquired": 2,
+    "pagesAccepted": 2,
+    "charsTotal": 14200,
+    "categories": { "identity": 1, "conversion": 1 }
   }
 }`;
 
