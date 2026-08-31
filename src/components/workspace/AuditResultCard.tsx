@@ -2,28 +2,8 @@
 
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
-import type { AuditSummary, PillarScore } from "./types";
-
-const PILLAR_LABELS: Record<string, string> = {
-  positioning: "Positioning",
-  messaging: "Messaging",
-  website_ux: "Website & UX",
-  conversion: "Conversion",
-  trust: "Trust",
-  competition: "Market & Competition",
-  growth_foundation: "Growth Foundation",
-};
-
-function rankedPillars(pillars: Record<string, PillarScore> | undefined) {
-  if (!pillars) return [];
-  return Object.entries(pillars)
-    .map(([key, value]) => ({
-      key,
-      label: PILLAR_LABELS[key] || key,
-      score: Number(value?.score || 0),
-    }))
-    .sort((a, b) => b.score - a.score);
-}
+import type { AuditSummary } from "./types";
+import { deriveCanonicalReportFacts } from "@/lib/audit/canonicalReport";
 
 function formatImpact(impact: string | undefined): string | undefined {
   if (!impact) return undefined;
@@ -38,15 +18,18 @@ type AuditResultCardProps = {
 };
 
 export function AuditResultCard({ result, onOpenAuditContext }: AuditResultCardProps) {
-  const overall = Number(result.overallScore || 0);
-  const company = result.identity?.company_name || result.company_name || "Target Startup";
-  const desc = result.identity?.inferred_description;
-  const reportId = result.reportId;
-  const constraint = result.the_verdict?.primary_constraint || result.score_interpretation;
-  const priorities = (result.priority_matrix || []).slice(0, 3);
-  const ranked = rankedPillars(result.pillars);
-  const strongest = ranked[0];
-  const weakest = ranked.length > 1 ? ranked[ranked.length - 1] : undefined;
+  const facts = deriveCanonicalReportFacts(result);
+  const overall = facts.overallScore;
+  const company = facts.companyName;
+  const desc = facts.description || result.identity?.inferred_description;
+  const reportId = facts.reportId || result.reportId;
+  const constraint = facts.primaryBottleneck;
+  const priorities = facts.priorities.slice(0, 3);
+  const strongest = facts.strongestDimension;
+  const weakest =
+    facts.strongestDimension.score === facts.weakestDimension.score
+      ? undefined
+      : facts.weakestDimension;
 
   return (
     <article

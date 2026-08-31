@@ -5,6 +5,10 @@ import {
   type PillarKey,
   type PillarScores,
 } from "@/lib/audit/score";
+import {
+  deriveCanonicalReportFacts,
+  PILLAR_LABELS,
+} from "@/lib/audit/canonicalReport";
 import type { AuditContextSource } from "@/lib/audit/auditContext";
 import type { LoadedAuditContext } from "@/lib/conversation/auditContextLoader";
 import type { AuditQaAnswer } from "@/lib/conversation/auditAnswer";
@@ -17,6 +21,10 @@ export type AuditFollowupRoute =
   | { type: "source_count" }
   | { type: "source_exists"; term: string }
   | { type: "overall_score" }
+  | { type: "strongest_dimension" }
+  | { type: "weakest_dimension" }
+  | { type: "primary_bottleneck" }
+  | { type: "top_priority" }
   | { type: "pillar_score"; pillar: PillarKey }
   | { type: "score_breakdown" }
   | { type: "counterfactual"; overrides: Partial<PillarScores>; invalid?: string }
@@ -24,24 +32,14 @@ export type AuditFollowupRoute =
   | { type: "research_extension" }
   | { type: "comparison_required" };
 
-const PILLAR_LABELS: Record<PillarKey, string> = {
-  positioning: "Positioning",
-  messaging: "Messaging",
-  website_ux: "Website & UX",
-  conversion: "Conversion",
-  trust: "Trust & Credibility",
-  competition: "Market & Competition",
-  growth_foundation: "Growth Foundation",
-};
-
 const PILLAR_ALIASES: Record<PillarKey, string[]> = {
-  positioning: ["positioning"],
-  messaging: ["messaging"],
-  website_ux: ["website and ux", "website & ux", "website ux", "ux"],
-  conversion: ["conversion"],
-  trust: ["trust and credibility", "trust & credibility", "trust", "credibility"],
-  competition: ["market and competition", "market & competition", "competition", "market"],
-  growth_foundation: ["growth foundation", "growth"],
+  positioning: ["positioning", "icp"],
+  messaging: ["messaging", "copy"],
+  website_ux: ["website and ux", "website & ux", "website ux", "ux", "website"],
+  conversion: ["conversion", "conversion triggers"],
+  trust: ["trust and credibility", "trust & credibility", "trust", "credibility", "social proof"],
+  competition: ["market and competition", "market & competition", "competition", "market", "defensibility", "moat"],
+  growth_foundation: ["growth foundation", "growth", "foundation"],
 };
 
 const AUDIT_TOPIC_PATTERN =
@@ -122,11 +120,48 @@ export function classifyAuditFollowup(
   }
 
   if (
-    /\b(?:what|which)\s+(?:was|is)\s+(?:our|the|this\s+company(?:'s)?|their)?\s*growth readiness score\b|\bwhat\s+growth readiness score\s+did\b/i.test(
+    /\b(?:what|which)\s+(?:was|is)\s+(?:our|the|this\s+company(?:'s)?|their)?\s*(?:overall\s+)?(?:growth readiness\s+)?score\b|\bwhat\s+(?:overall\s+)?growth readiness score\s+did\b|\bwhat\s+was\s+(?:the\s+)?overall\s+score\b/i.test(
       trimmed
     )
   ) {
     return hasActiveReport ? { type: "overall_score" } : { type: "missing_context" };
+  }
+
+  if (
+    /\b(?:what|which)\s+(?:was|is)\s+(?:the\s+)?(?:strongest|highest|top|best)\s+(?:pillar|dimension|area|part|score|scored|component)\b/i.test(
+      trimmed
+    ) ||
+    /\b(?:what|which)\s+(?:pillar|dimension|area)\s+(?:was|is|performed)\s+(?:the\s+)?(?:strongest|highest|best|top)\b/i.test(
+      trimmed
+    ) ||
+    /\b(?:strongest|highest scoring|top performing)\s+(?:pillar|dimension|area)\b/i.test(
+      trimmed
+    )
+  ) {
+    return hasActiveReport ? { type: "strongest_dimension" } : { type: "missing_context" };
+  }
+
+  if (
+    /\b(?:what|which)\s+(?:was|is)\s+(?:the\s+)?(?:weakest|lowest|worst|bottom)\s+(?:pillar|dimension|area|part|score|scored|component)\b/i.test(
+      trimmed
+    ) ||
+    /\b(?:what|which)\s+(?:pillar|dimension|area)\s+(?:was|is|performed)\s+(?:the\s+)?(?:weakest|lowest|worst|bottom)\b/i.test(
+      trimmed
+    ) ||
+    /\b(?:weakest|lowest scoring|worst performing)\s+(?:pillar|dimension|area)\b/i.test(
+      trimmed
+    )
+  ) {
+    return hasActiveReport ? { type: "weakest_dimension" } : { type: "missing_context" };
+  }
+
+  if (
+    /\b(?:what|which)\s+(?:is|was)\s+(?:the\s+)?(?:primary|main|biggest|core|key)\s+(?:bottleneck|constraint|blocker|limitation)\b/i.test(
+      trimmed
+    ) ||
+    /\b(?:primary|main|biggest|core)\s+(?:bottleneck|constraint)\b/i.test(trimmed)
+  ) {
+    return hasActiveReport ? { type: "primary_bottleneck" } : { type: "missing_context" };
   }
 
   const explicitScorePillar = referencedPillar(trimmed);
@@ -299,24 +334,9 @@ function pillarStanding(
   context: AuditContextPackV1,
   pillarKey: PillarKey
 ): string {
-  const scores = (Object.keys(context.pillars) as PillarKey[]).map(
-    (key) => context.pillars[key].score
-  );
-  const strongest = Math.max(...scores);
-  const weakest = Math.min(...scores);
-  const score = context.pillars[pillarKey].score;
-  if (strongest === weakest) return "was in line with the other areas";
-  if (score === strongest) {
-    return scores.filter((value) => value === strongest).length === 1
-      ? "was the strongest area"
-      : "was one of the strongest areas";
-  }
-  if (score === weakest) {
-    return scores.filter((value) => value === weakest).length === 1
-      ? "was the weakest area"
-      : "was one of the weakest areas";
-  }
-  return "sat between the strongest and weakest areas";
+  const facts = deriveCanonicalReportFacts(context);
+  const dim = facts.dimensions[pillarKey];
+  return dim ? dim.standingLabel : "was evaluated in this audit";
 }
 
 function pillarSignalsLabel(pillarKey: PillarKey | null): string {
@@ -399,13 +419,21 @@ export function applyPublicAuditQaPolicy(
     );
   }
 
+  const cleaned = withoutPublicPillarScores(answer.answer, loaded.context)
+    .replace(/\b(?:according to the\s+)?typed audit data\b/gi, "this audit")
+    .replace(/\b(?:according to the\s+)?internal context\b/gi, "the report")
+    .replace(/\btyped context\b/gi, "this audit")
+    .replace(/\brelativeStanding\b/gi, "relative standing")
+    .replace(/\bbetween_strongest_and_weakest\b/gi, "between the strongest and weakest areas")
+    .replace(/\bin_line_with_other_dimensions\b/gi, "in line with other dimensions")
+    .replace(/\s*\[(?:source\s+)?S\d+\]/gi, "")
+    .replace(/\b(?:source\s+)?S\d+\s*·?\s*/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
   return {
     ...answer,
-    answer: withoutPublicPillarScores(answer.answer, loaded.context)
-      .replace(/\s*\[(?:source\s+)?S\d+\]/gi, "")
-      .replace(/\b(?:source\s+)?S\d+\s*·?\s*/gi, "")
-      .replace(/\s{2,}/g, " ")
-      .trim(),
+    answer: cleaned,
     limitations: [...new Set(limitations)],
   };
 }
@@ -568,8 +596,9 @@ export function answerDeterministically(
   }
 
   if (route.type === "overall_score") {
+    const facts = deriveCanonicalReportFacts(context);
     return deterministicAnswer(
-      `The Growth Readiness Score was **${context.outcome.overallScore}/100**.`,
+      `The Growth Readiness Score was **${facts.overallScore}/100**.`,
       {
         citations: [],
         answerType: "score_explanation",
@@ -579,20 +608,80 @@ export function answerDeterministically(
     );
   }
 
+  if (route.type === "strongest_dimension") {
+    const facts = deriveCanonicalReportFacts(context);
+    const strongest = facts.strongestDimension;
+    const dim = facts.dimensions[strongest.key];
+    const strengths = dim.strengths.length > 0 ? ` Key strengths: ${dim.strengths.join("; ")}.` : "";
+    return deterministicAnswer(
+      `**${strongest.label}** was the strongest area in this audit. ${dim.reason}${strengths}`,
+      {
+        citations: [],
+        answerType: "score_explanation",
+        confidence: "high",
+        limitations: [],
+      }
+    );
+  }
+
+  if (route.type === "weakest_dimension") {
+    const facts = deriveCanonicalReportFacts(context);
+    const weakest = facts.weakestDimension;
+    const dim = facts.dimensions[weakest.key];
+    const weaknesses = dim.weaknesses.length > 0 ? ` Key areas to improve: ${dim.weaknesses.join("; ")}.` : "";
+    return deterministicAnswer(
+      `**${weakest.label}** was the weakest area in this audit. ${dim.reason}${weaknesses}`,
+      {
+        citations: [],
+        answerType: "score_explanation",
+        confidence: "high",
+        limitations: [],
+      }
+    );
+  }
+
+  if (route.type === "primary_bottleneck") {
+    const facts = deriveCanonicalReportFacts(context);
+    return deterministicAnswer(
+      `The primary bottleneck identified in this audit is: **${facts.primaryBottleneck}**`,
+      {
+        citations: [],
+        answerType: "score_explanation",
+        confidence: "high",
+        limitations: [],
+      }
+    );
+  }
+
+  if (route.type === "top_priority") {
+    const facts = deriveCanonicalReportFacts(context);
+    const first = facts.priorities[0];
+    if (first) {
+      return deterministicAnswer(
+        `The highest-priority recommendation is: **${first.task}** (${first.impact} impact, ${first.effort} effort). ${first.why}`,
+        {
+          citations: [],
+          answerType: "recommendation",
+          confidence: "high",
+          limitations: [],
+        }
+      );
+    }
+  }
+
   if (route.type === "pillar_score") {
-    const pillar = context.pillars[route.pillar];
-    const gap = pillar.weaknesses[0]
-      ? ` The leading stored weakness is: ${pillar.weaknesses[0]}`
+    const facts = deriveCanonicalReportFacts(context);
+    const dim = facts.dimensions[route.pillar];
+    const gap = dim.weaknesses[0]
+      ? ` The leading stored weakness is: ${dim.weaknesses[0]}`
       : "";
     return deterministicAnswer(
-      `Verdict doesn't expose individual dimension scores. ${PILLAR_LABELS[
-        route.pillar
-      ]} ${pillarStanding(context, route.pillar)} in this audit because ${pillar.reason}${gap}`,
+      `Verdict doesn't expose individual dimension scores. ${dim.label} ${dim.standingLabel} in this audit because ${dim.reason}${gap}`,
       {
         citations: [],
         answerType: "score_explanation",
         confidence:
-          pillar.confidence.toLowerCase() === "high" ? "high" : "medium",
+          dim.confidence.toLowerCase() === "high" ? "high" : "medium",
         limitations: [],
       }
     );

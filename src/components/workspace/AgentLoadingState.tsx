@@ -91,6 +91,8 @@ export function AgentLoadingState({
         ? "Reviewing audit evidence"
         : "Thinking";
 
+  const showTimer = mode === "audit" && Boolean(startTime);
+
   return (
     <div
       role="status"
@@ -110,9 +112,11 @@ export function AgentLoadingState({
       >
         {label}
       </span>
-      <span className="font-mono text-[12px] text-slate-400 dark:text-slate-500 tabular-nums">
-        {elapsed}
-      </span>
+      {showTimer && (
+        <span className="font-mono text-[12px] text-slate-400 dark:text-slate-500 tabular-nums">
+          {elapsed}
+        </span>
+      )}
     </div>
   );
 }
