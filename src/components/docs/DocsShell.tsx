@@ -35,10 +35,10 @@ export function DocsShell({ children, headings = [] }: DocsShellProps) {
       )}
 
       {/* Main Container Layout */}
-      <div className="mx-auto flex w-full max-w-7xl flex-1 px-4 sm:px-8 py-8 sm:py-12 gap-8 lg:gap-12">
+      <div className="mx-auto flex w-full max-w-7xl flex-1 px-4 sm:px-8 py-8 sm:py-10 gap-8 lg:gap-10">
         {/* Desktop Sidebar */}
         <aside className="hidden lg:block w-60 xl:w-64 shrink-0">
-          <div className="sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto pr-4">
+          <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-3">
             <DocsSidebar />
           </div>
         </aside>

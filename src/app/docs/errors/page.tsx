@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { DocsPagination } from "@/components/docs/DocsPagination";
-import { DocsCallout } from "@/components/docs/DocsCallout";
 import { DocsCodeBlock } from "@/components/docs/DocsCodeBlock";
 
 export const metadata: Metadata = {
@@ -125,11 +123,6 @@ export default function ErrorsPage() {
           </table>
         </div>
       </section>
-
-      <DocsCallout type="security" title="Sanitization Guarantee">
-        No stack traces, internal database IDs, or model provider error strings are ever passed
-        through in the public API response.
-      </DocsCallout>
 
       <DocsPagination
         prev={{

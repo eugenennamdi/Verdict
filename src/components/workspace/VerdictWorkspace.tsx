@@ -290,14 +290,19 @@ export function VerdictWorkspace() {
       if (response.status === 429) {
         let retryAfterSeconds: number | undefined;
         let message: string | undefined;
+        let isPaymentRequired = false;
         try {
           const payload = (await response.json()) as {
+            error?: string;
             message?: string;
             retryAfterSeconds?: number;
             usage?: HumanAuditUsageState;
           };
           retryAfterSeconds = payload.retryAfterSeconds;
           message = payload.message;
+          isPaymentRequired =
+            payload.error === "HUMAN_AUDIT_PAYMENT_REQUIRED" ||
+            Boolean(payload.usage && !payload.usage.canStartAudit);
           if (payload.usage) applyHumanAuditUsage(payload.usage);
           else refreshHumanAuditUsage();
         } catch {
@@ -305,6 +310,13 @@ export function VerdictWorkspace() {
           refreshHumanAuditUsage();
         }
         setPhase(hasCompletedAudit ? "complete" : "idle");
+
+        if (isPaymentRequired) {
+          setPendingAuditUrl(url);
+          posthog?.capture("audit_payment_preview_opened");
+          return;
+        }
+
         reply(message || rateLimitReply(retryAfterSeconds));
         return;
       }
@@ -522,6 +534,17 @@ export function VerdictWorkspace() {
           return;
         }
 
+        if (
+          payload?.action === "payment_required" &&
+          payload.url &&
+          payload.usage &&
+          !payload.usage.canStartAudit
+        ) {
+          setPendingAuditUrl(payload.url);
+          posthog?.capture("audit_payment_preview_opened");
+          return;
+        }
+
         reply(payload?.message || FALLBACK_REPLY, payload?.auditQa);
       },
       onError: () => {
@@ -669,7 +692,26 @@ export function VerdictWorkspace() {
           onRunAudit={() => {
             const url = pendingAuditUrl;
             setPendingAuditUrl(null);
-            handleSend(url);
+            if (!url) return;
+            setMessages((current) => {
+              if (
+                current.at(-1)?.role === "user" &&
+                current.at(-1)?.kind === "text" &&
+                (current.at(-1) as { content: string }).content === url
+              ) {
+                return current;
+              }
+              return [
+                ...current,
+                {
+                  id: nextId(),
+                  role: "user",
+                  kind: "text",
+                  content: url,
+                },
+              ];
+            });
+            void runInvestigation(url);
           }}
         />
       ) : null}

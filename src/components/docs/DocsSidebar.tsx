@@ -12,9 +12,9 @@ export function DocsSidebar({ onLinkClick }: DocsSidebarProps) {
   const pathname = usePathname();
 
   return (
-    <nav className="space-y-8 text-sm" aria-label="Documentation navigation">
+    <nav className="space-y-6 text-sm" aria-label="Documentation navigation">
       {DOCS_NAVIGATION.map((group) => (
-        <div key={group.title} className="space-y-2.5">
+        <div key={group.title} className="space-y-1.5">
           <h3 className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2.5">
             {group.title}
           </h3>

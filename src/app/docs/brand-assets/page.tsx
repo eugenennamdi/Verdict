@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Download } from "lucide-react";
 import { DocsPagination } from "@/components/docs/DocsPagination";
-import { DocsCallout } from "@/components/docs/DocsCallout";
 
 export const metadata: Metadata = {
   title: "Brand Assets",
@@ -27,52 +25,9 @@ export default function BrandAssetsPage() {
         </p>
       </div>
 
-      {/* Asset Preview Cards */}
+      {/* Download Action */}
       <section className="space-y-4">
-        <h2 className="text-xl font-bold text-slate-950 dark:text-white">
-          Vector Assets & Marks
-        </h2>
-
-        <div className="grid gap-4 sm:grid-cols-2 pt-2">
-          {/* Mark Card */}
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-6 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs space-y-4">
-            <div className="flex h-24 items-center justify-center rounded-xl bg-slate-950 text-white dark:bg-slate-900">
-              <span className="flex size-10 items-center justify-center rounded-xl bg-white font-mono text-base font-bold text-slate-950">
-                V
-              </span>
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-950 dark:text-white">
-                Verdict Logo Mark
-              </h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                Monochrome square mark for avatars, favicon, and app icons.
-              </p>
-            </div>
-          </div>
-
-          {/* Wordmark Card */}
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-6 dark:border-slate-800/80 dark:bg-slate-900/40 shadow-xs space-y-4">
-            <div className="flex h-24 items-center justify-center rounded-xl bg-slate-950 text-white dark:bg-slate-900">
-              <div className="flex items-center gap-2.5 font-bold tracking-tight text-lg">
-                <span className="flex size-6 items-center justify-center rounded-md bg-white font-mono text-xs font-bold text-slate-950">
-                  V
-                </span>
-                <span>Verdict</span>
-              </div>
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-950 dark:text-white">
-                Full Wordmark
-              </h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                Full horizontal lockup for navigation bars, headers, and media.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="pt-4">
+        <div>
           <a
             href="/verdict-brand-assets.zip"
             download

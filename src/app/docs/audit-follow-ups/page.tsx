@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { DocsPagination } from "@/components/docs/DocsPagination";
-import { DocsCallout } from "@/components/docs/DocsCallout";
 import { DocsCodeBlock } from "@/components/docs/DocsCodeBlock";
 
 export const metadata: Metadata = {
@@ -88,12 +86,6 @@ export default function AuditFollowUpsPage() {
 "Where exactly in the onboarding flow does Verdict suspect users are dropping off?"`}
         </DocsCodeBlock>
       </section>
-
-      <DocsCallout type="security" title="Private Model Boundary">
-        Follow-up responses are strictly grounded in the preserved audit record and admitted source context.
-        Low-level crawler and planner telemetry is excluded from customer-facing answers, and private
-        model reasoning is never exposed, ensuring conversations remain focused on actionable growth insights.
-      </DocsCallout>
 
       <DocsPagination
         prev={{

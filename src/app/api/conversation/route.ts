@@ -394,7 +394,7 @@ export function createConversationHandler(
             NextResponse.json({
               action: "payment_required",
               message: humanAuditQuotaExhaustedMessage(access.usage.free),
-              url: null,
+              url: action.url ?? null,
               quota: access.usage.free,
               usage: access.usage,
             }),

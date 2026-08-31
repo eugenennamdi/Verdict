@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { DocsPagination } from "@/components/docs/DocsPagination";
-import { DocsCallout } from "@/components/docs/DocsCallout";
 import { DocsCodeBlock } from "@/components/docs/DocsCodeBlock";
 import {
   AGENT_AUDIT_PATH,
@@ -132,12 +131,6 @@ export default function AgentApiOverviewPage() {
           ))}
         </ol>
       </section>
-
-      <DocsCallout type="security" title="Autonomous wallet key safety">
-        Always store your agent&apos;s <code>EVM_PRIVATE_KEY</code> in a server-side secret
-        manager or environment variable. Never expose private keys to client-side code, git
-        repositories, or build logs.
-      </DocsCallout>
 
       <DocsPagination
         prev={{

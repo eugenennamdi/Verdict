@@ -269,7 +269,7 @@ describe("POST /api/conversation grounded audit routing", () => {
 
     expect(payload).toMatchObject({
       action: "payment_required",
-      url: null,
+      url: "https://stripe.com/",
       quota: { used: 3, remaining: 0 },
     });
   });

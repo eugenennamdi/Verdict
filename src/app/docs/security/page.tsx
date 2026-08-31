@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { DocsPagination } from "@/components/docs/DocsPagination";
-import { DocsCallout } from "@/components/docs/DocsCallout";
 
 export const metadata: Metadata = {
   title: "Security & Privacy",
@@ -85,11 +83,6 @@ export default function SecurityPrivacyPage() {
           findings in Supabase to enable permanent sharing and grounded follow-up conversation.
           Raw intermediate scraped HTML and ephemeral planner reasoning are discarded after grading.
         </p>
-
-        <DocsCallout type="security" title="No Training on Private Prompts">
-          Verdict does not use customer conversational follow-ups or proprietary audit outputs
-          to train public foundational LLMs.
-        </DocsCallout>
       </section>
 
       <DocsPagination
